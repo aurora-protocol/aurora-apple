@@ -345,6 +345,59 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(state, .disconnected)
     }
 
+    func testControllerConnectTunnelChecksServerPacketExchangeThenInstallsAndStarts() async {
+        let tunnelManager = MockTunnelManager()
+        let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        ))
+        let endpoint = URL(string: "https://relay.example:9443")!
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: endpoint, routePolicy: "balanced"),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            packetClient: packetClient,
+            tunnelManager: tunnelManager
+        )
+
+        await controller.connectTunnel()
+
+        let packetEndpoint = await packetClient.requestedEndpoint
+        let events = await tunnelManager.events
+        let state = await controller.state
+        let packetState = await controller.packetExchangeState
+        let tunnelState = await controller.tunnelState
+        XCTAssertEqual(packetEndpoint?.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(events, [
+            .install(endpoint: "https://relay.example:9443", routePolicy: "balanced"),
+            .start,
+        ])
+        XCTAssertEqual(state, .ready)
+        XCTAssertEqual(packetState, .ready(packetCount: 1))
+        XCTAssertEqual(tunnelState, .connected)
+    }
+
+    func testControllerConnectTunnelStopsBeforeInstallWhenPacketExchangeFails() async {
+        let tunnelManager = MockTunnelManager()
+        let endpoint = URL(string: "https://relay.example:9443")!
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: endpoint, routePolicy: "balanced"),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            packetClient: MockPacketExchangeClient(error: AuroraClientError.unavailable),
+            tunnelManager: tunnelManager
+        )
+
+        await controller.connectTunnel()
+
+        let events = await tunnelManager.events
+        let state = await controller.state
+        let packetState = await controller.packetExchangeState
+        let tunnelState = await controller.tunnelState
+        XCTAssertTrue(events.isEmpty)
+        XCTAssertEqual(state, .ready)
+        XCTAssertEqual(packetState, .unavailable("packet exchange unavailable"))
+        XCTAssertEqual(tunnelState, .disconnected)
+    }
+
     func testProjectBuildsSharedPacketTunnelTargets() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)

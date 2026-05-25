@@ -129,6 +129,25 @@ public final class AuroraClientController: ObservableObject {
         }
     }
 
+    public func connectTunnel() async {
+        await refreshStatus()
+        guard case .ready = state else {
+            return
+        }
+
+        await checkPacketExchange()
+        guard case .ready = packetExchangeState else {
+            return
+        }
+
+        await installTunnel()
+        guard case .installed = tunnelState else {
+            return
+        }
+
+        await startTunnel()
+    }
+
     public func stopTunnel() async {
         tunnelState = .disconnecting
         await tunnelManager.stop()

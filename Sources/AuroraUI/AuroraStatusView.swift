@@ -53,7 +53,9 @@ public struct AuroraStatusView: View {
                     .disabled(isTunnelBusy)
 
                     Button {
-                        Task { await controller.startTunnel() }
+                        if controller.updateEndpoint(endpointText) {
+                            Task { await controller.connectTunnel() }
+                        }
                     } label: {
                         Label("Connect", systemImage: "play.fill")
                     }
