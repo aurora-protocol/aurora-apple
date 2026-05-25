@@ -253,6 +253,29 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(closed)
     }
 
+    func testPacketTunnelRuntimeClosesCoreWhenPacketPumpFails() async throws {
+        let packetFlow = MockPacketFlow(
+            batches: [
+                AuroraPacketFlowBatch(
+                    packets: [Data([0x45, 0x00, 0x00, 0x14])],
+                    protocolNumbers: [2]
+                ),
+            ]
+        )
+        let core = MockPacketTunnelCore(ingestError: AuroraClientError.unavailable)
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        await runtime.runUntilStopped()
+
+        let closed = await core.closed
+        XCTAssertTrue(closed)
+    }
+
     func testPacketBatchCodecMatchesServerVector() throws {
         let batch = AuroraPacketFlowBatch(
             packets: [Data([0x45, 0x00, 0x00, 0x14])],
@@ -612,13 +635,15 @@ private actor MockPacketFlow: AuroraPacketFlow {
 
 private actor MockPacketTunnelCore: AuroraPacketTunnelCore {
     private var outboundPackets: [AuroraPacketFlowBatch]
+    private let ingestError: (any Error)?
     private(set) var connectedEndpoint: String?
     private(set) var ingestedPackets: [Data] = []
     private(set) var pathChanges: [AuroraNetworkPathChange] = []
     private(set) var closed = false
 
-    init(outboundPackets: [AuroraPacketFlowBatch] = []) {
+    init(outboundPackets: [AuroraPacketFlowBatch] = [], ingestError: (any Error)? = nil) {
         self.outboundPackets = outboundPackets
+        self.ingestError = ingestError
     }
 
     func connect(configuration: AuroraConfiguration) async throws {
@@ -626,6 +651,9 @@ private actor MockPacketTunnelCore: AuroraPacketTunnelCore {
     }
 
     func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        if let ingestError {
+            throw ingestError
+        }
         ingestedPackets.append(contentsOf: batch.packets)
         guard !outboundPackets.isEmpty else {
             return AuroraPacketFlowBatch(packets: [], protocolNumbers: [])

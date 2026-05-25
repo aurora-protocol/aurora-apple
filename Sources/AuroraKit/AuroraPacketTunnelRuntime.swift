@@ -141,6 +141,8 @@ public actor AuroraPacketTunnelRuntime {
     private let packetFlow: any AuroraPacketFlow
     private let core: any AuroraPacketTunnelCore
     private var running = false
+    private var connected = false
+    private var coreClosed = false
 
     public init(
         configuration: AuroraConfiguration,
@@ -154,6 +156,8 @@ public actor AuroraPacketTunnelRuntime {
 
     public func start() async throws {
         try await core.connect(configuration: configuration)
+        connected = true
+        coreClosed = false
         running = true
     }
 
@@ -183,6 +187,7 @@ public actor AuroraPacketTunnelRuntime {
                 running = false
             }
         }
+        await closeCoreIfConnected()
     }
 
     public func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {
@@ -191,6 +196,22 @@ public actor AuroraPacketTunnelRuntime {
 
     public func stop() async {
         running = false
+        await closeCore()
+    }
+
+    private func closeCoreIfConnected() async {
+        guard connected else {
+            return
+        }
+        await closeCore()
+    }
+
+    private func closeCore() async {
+        guard !coreClosed else {
+            return
+        }
+        coreClosed = true
+        connected = false
         await core.close()
     }
 }
