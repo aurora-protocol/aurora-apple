@@ -90,6 +90,14 @@ public struct AuroraStatusView: View {
                     }
                 }
 
+                if !controller.redactedDiagnosticLine.isEmpty {
+                    Section("Diagnostics") {
+                        Text(controller.redactedDiagnosticLine)
+                            .font(.system(.footnote, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                }
+
                 Section {
                     TextEditor(text: $profileText)
                         .font(.system(.footnote, design: .monospaced))

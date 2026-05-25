@@ -1313,6 +1313,18 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(view.contains("loadStoredPortableProfile"), "status view does not load stored portable profiles")
     }
 
+    func testSharedUIExposesRedactedDiagnostics() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let view = try String(
+            contentsOf: root.appendingPathComponent("Sources/AuroraUI/AuroraStatusView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(view.contains("Diagnostics"), "status view missing diagnostics section")
+        XCTAssertTrue(view.contains("redactedDiagnosticLine"), "status view does not read controller redacted diagnostics")
+        XCTAssertTrue(view.contains("monospaced"), "status view should render diagnostics as copy-stable text")
+    }
+
     func testPacketTunnelProviderUsesSharedProfileStoreFallback() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let provider = try String(
