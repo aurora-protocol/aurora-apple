@@ -58,6 +58,16 @@ public struct AuroraTunnelProfile {
             Self.routePolicyKey: configuration.routePolicy,
         ]
     }
+
+    public static func configuration(from providerConfiguration: [String: Any]?) -> AuroraConfiguration? {
+        guard let endpointText = providerConfiguration?[endpointKey] as? String,
+              let endpoint = AuroraConfiguration.validatedEndpoint(from: endpointText)
+        else {
+            return nil
+        }
+        let routePolicy = providerConfiguration?[routePolicyKey] as? String ?? "balanced"
+        return AuroraConfiguration(endpoint: endpoint, routePolicy: routePolicy)
+    }
 }
 
 public enum AuroraTunnelProviderBundleIdentifier {

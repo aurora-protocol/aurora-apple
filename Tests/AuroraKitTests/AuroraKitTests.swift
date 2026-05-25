@@ -104,6 +104,23 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(profile.providerConfiguration["routePolicy"], "adversarial-dpi")
     }
 
+    func testTunnelProfileParsesProviderConfigurationPayload() throws {
+        let configuration = try XCTUnwrap(AuroraTunnelProfile.configuration(from: [
+            "endpoint": "https://relay.example:9443",
+            "routePolicy": "balanced",
+        ]))
+
+        XCTAssertEqual(configuration.endpoint.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(configuration.routePolicy, "balanced")
+    }
+
+    func testTunnelProfileRejectsInvalidProviderConfigurationEndpoint() throws {
+        XCTAssertNil(AuroraTunnelProfile.configuration(from: [
+            "endpoint": "not a server",
+            "routePolicy": "balanced",
+        ]))
+    }
+
     func testControllerInstallsAndStartsTunnelThroughInjectedManager() async {
         let tunnelManager = MockTunnelManager()
         let endpoint = URL(string: "https://relay.example:9443")!

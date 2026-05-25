@@ -3,12 +3,12 @@ import Foundation
 import NetworkExtension
 
 final class PacketTunnelProvider: NEPacketTunnelProvider {
-    private let configuration = AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!)
+    private let fallbackConfiguration = AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!)
     private let serverClient = URLSessionAuroraServerClient()
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let completion = StartTunnelCompletion(completionHandler)
-        let tunnelConfiguration = AuroraPacketTunnelConfiguration(configuration: configuration)
+        let tunnelConfiguration = AuroraPacketTunnelConfiguration(configuration: resolvedConfiguration())
         let endpoint = tunnelConfiguration.endpoint
         let serverClient = serverClient
 
@@ -26,6 +26,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         completionHandler()
+    }
+
+    private func resolvedConfiguration() -> AuroraConfiguration {
+        guard let tunnelProtocol = protocolConfiguration as? NETunnelProviderProtocol,
+              let configuration = AuroraTunnelProfile.configuration(from: tunnelProtocol.providerConfiguration)
+        else {
+            return fallbackConfiguration
+        }
+        return configuration
     }
 
     private func networkSettings(for configuration: AuroraPacketTunnelConfiguration) -> NEPacketTunnelNetworkSettings {
