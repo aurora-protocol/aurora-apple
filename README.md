@@ -8,7 +8,7 @@ Aurora Apple contains the iOS and macOS client apps plus shared Swift client lib
 - `AuroraUI`: reusable SwiftUI status surface for client apps.
 - `AuroraIOS`: iOS app target that checks a running Aurora server.
 - `AuroraMac`: macOS app target that checks a running Aurora server.
-- `SharedNetworkExtension`: packet tunnel provider skeleton for entitlement-backed packaging work.
+- `SharedNetworkExtension`: shared packet tunnel provider with Network Extension IPv4/DNS settings for entitlement-backed packaging work.
 
 ## Local checks
 

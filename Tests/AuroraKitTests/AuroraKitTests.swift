@@ -67,6 +67,29 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(state, .unavailable("invalid server"))
     }
 
+    func testPacketTunnelConfigurationBuildsNetworkExtensionFloor() throws {
+        let endpoint = URL(string: "https://relay.example:9443")!
+        let tunnel = AuroraPacketTunnelConfiguration(configuration: AuroraConfiguration(endpoint: endpoint))
+
+        XCTAssertEqual(tunnel.tunnelRemoteAddress, "relay.example")
+        XCTAssertEqual(tunnel.ipv4Address, "10.77.0.2")
+        XCTAssertEqual(tunnel.ipv4SubnetMask, "255.255.255.255")
+        XCTAssertEqual(tunnel.mtu, 1280)
+        XCTAssertEqual(tunnel.dnsServers, ["100.64.0.1"])
+        XCTAssertTrue(tunnel.includeDefaultIPv4Route)
+        XCTAssertTrue(tunnel.captureAllDNSDomains)
+    }
+
+    func testPacketTunnelConfigurationFallsBackToEndpointStringWhenHostIsMissing() throws {
+        let endpoint = URL(string: "http://127.0.0.1:9443")!
+        let tunnel = AuroraPacketTunnelConfiguration(
+            configuration: AuroraConfiguration(endpoint: endpoint),
+            tunnelRemoteAddress: ""
+        )
+
+        XCTAssertEqual(tunnel.tunnelRemoteAddress, "127.0.0.1")
+    }
+
     func testProjectBuildsSharedPacketTunnelTargets() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)

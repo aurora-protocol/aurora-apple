@@ -17,6 +17,7 @@
 		465EFAB81224D9A0DF360A21 /* AuroraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */; };
 		4BC9AED6277DFEAF4827D5F1 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9214C975B7F71AE4F37751FC /* PacketTunnelProvider.swift */; };
 		60B10D696D804773ADFD5991 /* AuroraUI_macOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A535DB687DFDC5E17200527D /* AuroraUI_macOS.framework */; };
+		6342FD7E19ADB4AB19BC0706 /* AuroraPacketTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */; };
 		65CE6DAD89B9A01064598C32 /* AuroraClientController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */; };
 		7114818FF3AD3B97EE5BB8CB /* AuroraKit_macOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D0D733810C55062FF37301F /* AuroraKit_macOS.framework */; };
 		77A9C275212DE7D6F6DC6849 /* AuroraServerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */; };
@@ -24,6 +25,7 @@
 		89BB60E3B59F891FE3753B23 /* AuroraUI_macOS.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A535DB687DFDC5E17200527D /* AuroraUI_macOS.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		906AAAB771CBB98386353322 /* AuroraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */; };
 		C5E59A21794A460372C7D8DD /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
+		CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */; };
 		CCA081E765150A4C5FEBFC75 /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
 		DA63A7998964D7A44E5CE610 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9214C975B7F71AE4F37751FC /* PacketTunnelProvider.swift */; };
 		DFFF7D1592000271F0740723 /* AuroraClientController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */; };
@@ -106,6 +108,7 @@
 		15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraConfiguration.swift; sourceTree = "<group>"; };
 		1E0F3643EC451ED6E21A8018 /* AuroraPacketTunnel_iOS.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AuroraPacketTunnel_iOS.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		23F6127B1927646AB2786F7E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraPacketTunnelConfiguration.swift; sourceTree = "<group>"; };
 		3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraServerClient.swift; sourceTree = "<group>"; };
 		3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraRedactor.swift; sourceTree = "<group>"; };
 		49329FE830B3AD5F8B8E880E /* AuroraIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AuroraIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -189,6 +192,7 @@
 			children = (
 				6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */,
 				15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */,
+				2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */,
 				3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */,
 				3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */,
 			);
@@ -447,6 +451,7 @@
 			files = (
 				65CE6DAD89B9A01064598C32 /* AuroraClientController.swift in Sources */,
 				906AAAB771CBB98386353322 /* AuroraConfiguration.swift in Sources */,
+				CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				1D476DAA0BB105B69879EED1 /* AuroraRedactor.swift in Sources */,
 				77A9C275212DE7D6F6DC6849 /* AuroraServerClient.swift in Sources */,
 			);
@@ -458,6 +463,7 @@
 			files = (
 				DFFF7D1592000271F0740723 /* AuroraClientController.swift in Sources */,
 				465EFAB81224D9A0DF360A21 /* AuroraConfiguration.swift in Sources */,
+				6342FD7E19ADB4AB19BC0706 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				F398C96FB2AA206560021F08 /* AuroraRedactor.swift in Sources */,
 				E416114E84202364870CF8FF /* AuroraServerClient.swift in Sources */,
 			);
