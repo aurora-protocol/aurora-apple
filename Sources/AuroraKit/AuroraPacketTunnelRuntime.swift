@@ -120,6 +120,38 @@ public struct AuroraNetworkPathChange: Equatable, Sendable {
     }
 }
 
+public struct AuroraDNSMessage: Equatable, Sendable {
+    public var flowID: UInt64
+    public var message: Data
+
+    public init(flowID: UInt64, message: Data) {
+        self.flowID = flowID
+        self.message = Data(message)
+    }
+}
+
+public struct AuroraSocketEvent: Equatable, Sendable {
+    public var eventType: String
+    public var flowID: UInt64
+    public var remoteAddress: String
+    public var remotePort: UInt16
+    public var payload: Data
+
+    public init(
+        eventType: String,
+        flowID: UInt64,
+        remoteAddress: String,
+        remotePort: UInt16,
+        payload: Data
+    ) {
+        self.eventType = eventType
+        self.flowID = flowID
+        self.remoteAddress = remoteAddress
+        self.remotePort = remotePort
+        self.payload = Data(payload)
+    }
+}
+
 public protocol AuroraPacketFlow: Sendable {
     func readPacketBatch() async -> AuroraPacketFlowBatch?
     func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool
@@ -128,6 +160,8 @@ public protocol AuroraPacketFlow: Sendable {
 public protocol AuroraPacketTunnelCore: Sendable {
     func connect(configuration: AuroraConfiguration) async throws
     func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch
+    func submitDNSMessage(_ message: AuroraDNSMessage) async throws
+    func submitSocketEvent(_ event: AuroraSocketEvent) async throws
     func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async
     func close() async
 }
@@ -194,6 +228,14 @@ public actor AuroraPacketTunnelRuntime {
         await core.notifyNetworkPathChange(change)
     }
 
+    public func submitDNSMessage(_ message: AuroraDNSMessage) async throws {
+        try await core.submitDNSMessage(message)
+    }
+
+    public func submitSocketEvent(_ event: AuroraSocketEvent) async throws {
+        try await core.submitSocketEvent(event)
+    }
+
     public func stop() async {
         running = false
         await closeCore()
@@ -223,6 +265,8 @@ public actor AuroraServerBackedPacketTunnelCore: AuroraPacketTunnelCore {
     private let tokenWallet: AuroraTokenWallet?
     private var configuration: AuroraConfiguration?
     private var latestPathChange: AuroraNetworkPathChange?
+    private var latestDNSMessage: AuroraDNSMessage?
+    private var latestSocketEvent: AuroraSocketEvent?
 
     public init(
         serverClient: any AuroraServerClient & AuroraPacketExchangeClient & AuroraIssuerClient = URLSessionAuroraServerClient(),
@@ -270,6 +314,20 @@ public actor AuroraServerBackedPacketTunnelCore: AuroraPacketTunnelCore {
             throw AuroraClientError.unavailable
         }
         return try await packetClient.exchangePacketBatch(endpoint: configuration.endpoint, batch: batch)
+    }
+
+    public func submitDNSMessage(_ message: AuroraDNSMessage) async throws {
+        guard configuration != nil else {
+            throw AuroraClientError.unavailable
+        }
+        latestDNSMessage = message
+    }
+
+    public func submitSocketEvent(_ event: AuroraSocketEvent) async throws {
+        guard configuration != nil else {
+            throw AuroraClientError.unavailable
+        }
+        latestSocketEvent = event
     }
 
     public func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {

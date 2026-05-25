@@ -947,6 +947,44 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(closed)
     }
 
+    func testPacketTunnelRuntimeForwardsDNSMessagesAndSocketEvents() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockPacketTunnelCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+        var dnsMessage = Data([0x12, 0x34, 0x01, 0x00])
+        var socketPayload = Data([0x05, 0x06, 0x07])
+
+        try await runtime.submitDNSMessage(AuroraDNSMessage(flowID: 91, message: dnsMessage))
+        try await runtime.submitSocketEvent(AuroraSocketEvent(
+            eventType: "connect",
+            flowID: 4,
+            remoteAddress: "203.0.113.7",
+            remotePort: 443,
+            payload: socketPayload
+        ))
+        dnsMessage[0] = 0
+        socketPayload[0] = 0
+
+        let dnsMessages = await core.dnsMessages
+        let socketEvents = await core.socketEvents
+        XCTAssertEqual(dnsMessages, [
+            AuroraDNSMessage(flowID: 91, message: Data([0x12, 0x34, 0x01, 0x00])),
+        ])
+        XCTAssertEqual(socketEvents, [
+            AuroraSocketEvent(
+                eventType: "connect",
+                flowID: 4,
+                remoteAddress: "203.0.113.7",
+                remotePort: 443,
+                payload: Data([0x05, 0x06, 0x07])
+            ),
+        ])
+    }
+
     func testPacketTunnelRuntimeClosesCoreWhenPacketPumpFails() async throws {
         let packetFlow = MockPacketFlow(
             batches: [
@@ -1868,6 +1906,8 @@ private actor MockPacketTunnelCore: AuroraPacketTunnelCore {
     private(set) var connectedEndpoint: String?
     private(set) var ingestedPackets: [Data] = []
     private(set) var pathChanges: [AuroraNetworkPathChange] = []
+    private(set) var dnsMessages: [AuroraDNSMessage] = []
+    private(set) var socketEvents: [AuroraSocketEvent] = []
     private(set) var closed = false
 
     init(outboundPackets: [AuroraPacketFlowBatch] = [], ingestError: (any Error)? = nil) {
@@ -1892,6 +1932,14 @@ private actor MockPacketTunnelCore: AuroraPacketTunnelCore {
 
     func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {
         pathChanges.append(change)
+    }
+
+    func submitDNSMessage(_ message: AuroraDNSMessage) async throws {
+        dnsMessages.append(message)
+    }
+
+    func submitSocketEvent(_ event: AuroraSocketEvent) async throws {
+        socketEvents.append(event)
     }
 
     func close() async {
