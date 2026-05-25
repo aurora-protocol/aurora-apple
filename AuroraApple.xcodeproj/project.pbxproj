@@ -32,6 +32,8 @@
 		8F8420EA6160222A6EAE4254 /* AuroraTokenWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C571DE65AE541DF37702EB /* AuroraTokenWallet.swift */; };
 		906AAAB771CBB98386353322 /* AuroraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */; };
 		98B3B84ABBFB6E375D98D25F /* AuroraTokenWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C571DE65AE541DF37702EB /* AuroraTokenWallet.swift */; };
+		B6B85CDDA1291747D680D9D9 /* AuroraIssuerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */; };
+		BBAFD654C92B664EC66813C4 /* AuroraIssuerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */; };
 		C5E59A21794A460372C7D8DD /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
 		CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */; };
 		CCA081E765150A4C5FEBFC75 /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
@@ -150,6 +152,7 @@
 /* Begin PBXFileReference section */
 		0CF99D8F07F11E19094060F8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraConfiguration.swift; sourceTree = "<group>"; };
+		1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraIssuerClient.swift; sourceTree = "<group>"; };
 		1E0F3643EC451ED6E21A8018 /* AuroraPacketTunnel_iOS.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AuroraPacketTunnel_iOS.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		23F6127B1927646AB2786F7E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraPacketTunnelConfiguration.swift; sourceTree = "<group>"; };
@@ -244,6 +247,7 @@
 			children = (
 				6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */,
 				15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */,
+				1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */,
 				2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */,
 				771CB3DE75AB5028FB1A64FE /* AuroraPacketTunnelRuntime.swift */,
 				3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */,
@@ -513,6 +517,7 @@
 			files = (
 				65CE6DAD89B9A01064598C32 /* AuroraClientController.swift in Sources */,
 				906AAAB771CBB98386353322 /* AuroraConfiguration.swift in Sources */,
+				B6B85CDDA1291747D680D9D9 /* AuroraIssuerClient.swift in Sources */,
 				CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				3D2732712428594EA96C1619 /* AuroraPacketTunnelRuntime.swift in Sources */,
 				1D476DAA0BB105B69879EED1 /* AuroraRedactor.swift in Sources */,
@@ -528,6 +533,7 @@
 			files = (
 				DFFF7D1592000271F0740723 /* AuroraClientController.swift in Sources */,
 				465EFAB81224D9A0DF360A21 /* AuroraConfiguration.swift in Sources */,
+				BBAFD654C92B664EC66813C4 /* AuroraIssuerClient.swift in Sources */,
 				6342FD7E19ADB4AB19BC0706 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				43F2245BB154769893E25598 /* AuroraPacketTunnelRuntime.swift in Sources */,
 				F398C96FB2AA206560021F08 /* AuroraRedactor.swift in Sources */,

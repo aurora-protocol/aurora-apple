@@ -180,6 +180,154 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(exchanged?.protocolNumbers, [2])
     }
 
+    func testURLSessionIssuerClientFetchesMetadataAndIssuesAdmissionToken() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [IssuerURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = URLSessionAuroraServerClient(session: session)
+        let issuerMetadata = Data(repeating: 0x45, count: 32)
+        let issuerMetadataHash = Data(repeating: 0x46, count: 48)
+        let admissionProof = makeAdmissionProof(
+            relayBucketID: Data(repeating: 0x81, count: 16),
+            tokenAuthenticator: Data(repeating: 0x92, count: 256),
+            expiryUnix: 1_800_000_000
+        )
+        let tokenNonce = Data(repeating: 0xa1, count: 32)
+        let redemptionContextHash = Data(repeating: 0xb2, count: 48)
+        IssuerURLProtocol.setResponses([
+            IssuerURLProtocol.Response(
+                path: "/issuer/issuer-metadata",
+                contentType: "application/json",
+                body: #"{"issuer_metadata":"\#(issuerMetadata.auroraHexString)","issuer_metadata_hash":"\#(issuerMetadataHash.auroraHexString)"}"#.data(using: .utf8)!
+            ),
+            IssuerURLProtocol.Response(
+                path: "/issuer/blind-rsa/issue",
+                contentType: "application/json",
+                body: #"{"admission_proof":"\#(admissionProof.auroraHexString)"}"#.data(using: .utf8)!
+            ),
+        ])
+
+        let metadata = try await client.fetchIssuerMetadata(endpoint: URL(string: "https://relay.example:9443")!)
+        let issued = try await client.issueBlindRSAAdmissionToken(
+            endpoint: URL(string: "https://relay.example:9443")!,
+            request: AuroraBlindRSAIssueRequest(
+                tokenNonce: tokenNonce,
+                redemptionContextHash: redemptionContextHash,
+                expiryUnix: 1_800_000_000
+            )
+        )
+
+        let requests = IssuerURLProtocol.recordedRequests
+        XCTAssertEqual(metadata.issuerMetadata, issuerMetadata)
+        XCTAssertEqual(metadata.issuerMetadataHash, issuerMetadataHash)
+        XCTAssertEqual(issued.admissionProof, admissionProof)
+        XCTAssertEqual(issued.relayBucketID, Data(repeating: 0x81, count: 16))
+        XCTAssertEqual(issued.tokenAuthenticator, Data(repeating: 0x92, count: 256))
+        XCTAssertEqual(issued.issuerMetadataHash, issuerMetadataHash)
+        XCTAssertEqual(issued.expiryUnix, 1_800_000_000)
+        XCTAssertEqual(requests.map { $0.request.url?.path }, ["/issuer/issuer-metadata", "/issuer/blind-rsa/issue"])
+        XCTAssertEqual(requests[0].request.httpMethod, "GET")
+        XCTAssertEqual(requests[1].request.httpMethod, "POST")
+        XCTAssertEqual(requests[1].request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let issueBody = try XCTUnwrap(requests[1].body)
+        let issueJSON = try JSONSerialization.jsonObject(with: issueBody) as? [String: Any]
+        XCTAssertEqual(issueJSON?["token_nonce"] as? String, tokenNonce.auroraHexString)
+        XCTAssertEqual(issueJSON?["redemption_context_hash"] as? String, redemptionContextHash.auroraHexString)
+        XCTAssertEqual(issueJSON?["expiry_unix"] as? Int, 1_800_000_000)
+    }
+
+    func testControllerIssuesAdmissionTokenAndStoresItInWallet() async throws {
+        let store = MockSecureCredentialStore()
+        let wallet = AuroraTokenWallet(credentialStore: store)
+        let issued = AuroraIssuedAdmissionToken(
+            admissionProof: Data("secret-proof".utf8),
+            relayBucketID: Data(repeating: 0x81, count: 16),
+            tokenAuthenticator: Data("secret-token".utf8),
+            expiryUnix: 1_800_000_000
+        )
+        let issuerClient = MockIssuerClient(issuedToken: issued)
+        let request = AuroraBlindRSAIssueRequest(
+            tokenNonce: Data(repeating: 0xa1, count: 32),
+            redemptionContextHash: Data(repeating: 0xb2, count: 48),
+            expiryUnix: 1_800_000_000
+        )
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            issuerClient: issuerClient,
+            tokenWallet: wallet
+        )
+
+        await controller.issueAdmissionToken(request: request)
+
+        let state = await controller.credentialState
+        let diagnostic = await controller.redactedDiagnosticLine
+        let requestedEndpoint = await issuerClient.requestedEndpoint
+        let requestedIssue = await issuerClient.requestedIssue
+        let saved = try await wallet.load(relayBucketID: Data(repeating: 0x81, count: 16).auroraHexString)
+        XCTAssertEqual(state, .ready(relayBucketID: Data(repeating: 0x81, count: 16).auroraHexString))
+        XCTAssertEqual(requestedEndpoint?.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(requestedIssue, request)
+        XCTAssertEqual(saved?.admissionProof, Data("secret-proof".utf8))
+        XCTAssertEqual(saved?.tokenAuthenticator, Data("secret-token".utf8))
+        XCTAssertEqual(saved?.expiresAtUnix, 1_800_000_000)
+        XCTAssertFalse(diagnostic.contains("secret-proof"))
+        XCTAssertFalse(diagnostic.contains("secret-token"))
+        XCTAssertTrue(diagnostic.contains("relay_bucket_id=81818181818181818181818181818181"))
+    }
+
+    func testControllerReportsIssuerFailureWithoutLeakingRequestMaterial() async {
+        let issuerClient = MockIssuerClient(error: AuroraClientError.unavailable)
+        let request = AuroraBlindRSAIssueRequest(
+            tokenNonce: Data(repeating: 0xa1, count: 32),
+            redemptionContextHash: Data(repeating: 0xb2, count: 48),
+            expiryUnix: 1_800_000_000
+        )
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            issuerClient: issuerClient,
+            tokenWallet: AuroraTokenWallet(credentialStore: MockSecureCredentialStore())
+        )
+
+        await controller.issueAdmissionToken(request: request)
+
+        let state = await controller.credentialState
+        let diagnostic = await controller.redactedDiagnosticLine
+        XCTAssertEqual(state, .unavailable("credential unavailable"))
+        XCTAssertFalse(diagnostic.contains(request.tokenNonce.auroraHexString))
+        XCTAssertFalse(diagnostic.contains(request.redemptionContextHash.auroraHexString))
+    }
+
+    func testControllerRejectsIssuedTokenBoundToDifferentIssuerMetadata() async throws {
+        let store = MockSecureCredentialStore()
+        let wallet = AuroraTokenWallet(credentialStore: store)
+        let issued = AuroraIssuedAdmissionToken(
+            admissionProof: Data("secret-proof".utf8),
+            relayBucketID: Data(repeating: 0x81, count: 16),
+            tokenAuthenticator: Data("secret-token".utf8),
+            issuerMetadataHash: Data(repeating: 0x47, count: 48),
+            expiryUnix: 1_800_000_000
+        )
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            issuerClient: MockIssuerClient(issuedToken: issued),
+            tokenWallet: wallet
+        )
+
+        await controller.issueAdmissionToken(request: AuroraBlindRSAIssueRequest(
+            tokenNonce: Data(repeating: 0xa1, count: 32),
+            redemptionContextHash: Data(repeating: 0xb2, count: 48),
+            expiryUnix: 1_800_000_000
+        ))
+
+        let state = await controller.credentialState
+        let saved = try await wallet.load(relayBucketID: Data(repeating: 0x81, count: 16).auroraHexString)
+        XCTAssertEqual(state, .unavailable("credential unavailable"))
+        XCTAssertNil(saved)
+    }
+
     func testControllerReportsPacketExchangeFailureWithoutChangingServerStatus() async {
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
@@ -458,6 +606,13 @@ final class AuroraKitTests: XCTestCase {
 
     func testControllerConnectTunnelChecksServerPacketExchangeThenInstallsAndStarts() async {
         let tunnelManager = MockTunnelManager()
+        let issued = AuroraIssuedAdmissionToken(
+            admissionProof: Data("secret-proof".utf8),
+            relayBucketID: Data(repeating: 0x81, count: 16),
+            tokenAuthenticator: Data("secret-token".utf8),
+            expiryUnix: 1_800_000_000
+        )
+        let issuerClient = MockIssuerClient(issuedToken: issued)
         let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
             packets: [Data([0x45, 0x00, 0x00, 0x14])],
             protocolNumbers: [2]
@@ -467,33 +622,79 @@ final class AuroraKitTests: XCTestCase {
             configuration: AuroraConfiguration(endpoint: endpoint, routePolicy: "balanced"),
             serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
             packetClient: packetClient,
+            issuerClient: issuerClient,
+            tokenWallet: AuroraTokenWallet(credentialStore: MockSecureCredentialStore()),
             tunnelManager: tunnelManager
         )
 
         await controller.connectTunnel()
 
         let packetEndpoint = await packetClient.requestedEndpoint
+        let issuerEndpoint = await issuerClient.requestedEndpoint
         let events = await tunnelManager.events
         let state = await controller.state
+        let credentialState = await controller.credentialState
         let packetState = await controller.packetExchangeState
         let tunnelState = await controller.tunnelState
+        XCTAssertEqual(issuerEndpoint?.absoluteString, "https://relay.example:9443")
         XCTAssertEqual(packetEndpoint?.absoluteString, "https://relay.example:9443")
         XCTAssertEqual(events, [
             .install(endpoint: "https://relay.example:9443", routePolicy: "balanced"),
             .start,
         ])
         XCTAssertEqual(state, .ready)
+        XCTAssertEqual(credentialState, .ready(relayBucketID: "81818181818181818181818181818181"))
         XCTAssertEqual(packetState, .ready(packetCount: 1))
         XCTAssertEqual(tunnelState, .connected)
     }
 
+    func testControllerConnectTunnelStopsBeforePacketExchangeWhenIssuerFails() async {
+        let tunnelManager = MockTunnelManager()
+        let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        ))
+        let endpoint = URL(string: "https://relay.example:9443")!
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: endpoint, routePolicy: "balanced"),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            packetClient: packetClient,
+            issuerClient: MockIssuerClient(error: AuroraClientError.unavailable),
+            tokenWallet: AuroraTokenWallet(credentialStore: MockSecureCredentialStore()),
+            tunnelManager: tunnelManager
+        )
+
+        await controller.connectTunnel()
+
+        let events = await tunnelManager.events
+        let packetEndpoint = await packetClient.requestedEndpoint
+        let state = await controller.state
+        let credentialState = await controller.credentialState
+        let packetState = await controller.packetExchangeState
+        let tunnelState = await controller.tunnelState
+        XCTAssertTrue(events.isEmpty)
+        XCTAssertNil(packetEndpoint)
+        XCTAssertEqual(state, .ready)
+        XCTAssertEqual(credentialState, .unavailable("credential unavailable"))
+        XCTAssertEqual(packetState, .idle)
+        XCTAssertEqual(tunnelState, .disconnected)
+    }
+
     func testControllerConnectTunnelStopsBeforeInstallWhenPacketExchangeFails() async {
         let tunnelManager = MockTunnelManager()
+        let issuerClient = MockIssuerClient(issuedToken: AuroraIssuedAdmissionToken(
+            admissionProof: Data("secret-proof".utf8),
+            relayBucketID: Data(repeating: 0x81, count: 16),
+            tokenAuthenticator: Data("secret-token".utf8),
+            expiryUnix: 1_800_000_000
+        ))
         let endpoint = URL(string: "https://relay.example:9443")!
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: endpoint, routePolicy: "balanced"),
             serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
             packetClient: MockPacketExchangeClient(error: AuroraClientError.unavailable),
+            issuerClient: issuerClient,
+            tokenWallet: AuroraTokenWallet(credentialStore: MockSecureCredentialStore()),
             tunnelManager: tunnelManager
         )
 
@@ -501,10 +702,12 @@ final class AuroraKitTests: XCTestCase {
 
         let events = await tunnelManager.events
         let state = await controller.state
+        let credentialState = await controller.credentialState
         let packetState = await controller.packetExchangeState
         let tunnelState = await controller.tunnelState
         XCTAssertTrue(events.isEmpty)
         XCTAssertEqual(state, .ready)
+        XCTAssertEqual(credentialState, .ready(relayBucketID: "81818181818181818181818181818181"))
         XCTAssertEqual(packetState, .unavailable("packet exchange unavailable"))
         XCTAssertEqual(tunnelState, .disconnected)
     }
@@ -566,6 +769,44 @@ private struct MockServerClient: AuroraServerClient {
     }
 }
 
+private actor MockIssuerClient: AuroraIssuerClient {
+    private let issuedToken: AuroraIssuedAdmissionToken?
+    private let error: (any Error)?
+    private(set) var requestedEndpoint: URL?
+    private(set) var requestedIssue: AuroraBlindRSAIssueRequest?
+
+    init(issuedToken: AuroraIssuedAdmissionToken) {
+        self.issuedToken = issuedToken
+        self.error = nil
+    }
+
+    init(error: any Error) {
+        self.issuedToken = nil
+        self.error = error
+    }
+
+    func fetchIssuerMetadata(endpoint: URL) async throws -> AuroraIssuerMetadataEnvelope {
+        AuroraIssuerMetadataEnvelope(
+            issuerMetadata: Data(repeating: 0x45, count: 32),
+            issuerMetadataHash: Data(repeating: 0x46, count: 48)
+        )
+    }
+
+    func issueBlindRSAAdmissionToken(endpoint: URL, request: AuroraBlindRSAIssueRequest) async throws -> AuroraIssuedAdmissionToken {
+        requestedEndpoint = endpoint
+        requestedIssue = request
+        if let error {
+            throw error
+        }
+        return issuedToken ?? AuroraIssuedAdmissionToken(
+            admissionProof: Data(),
+            relayBucketID: Data(repeating: 0x81, count: 16),
+            tokenAuthenticator: Data(),
+            expiryUnix: request.expiryUnix
+        )
+    }
+}
+
 private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
     struct Key: Hashable {
         var service: String
@@ -595,6 +836,83 @@ private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
     func savedData(service: String, account: String) -> Data? {
         entries[Key(service: service, account: account)]
     }
+}
+
+private final class IssuerURLProtocol: URLProtocol, @unchecked Sendable {
+    struct Response: Sendable {
+        var path: String
+        var contentType: String
+        var body: Data
+    }
+
+    struct RecordedRequest: Sendable {
+        var request: URLRequest
+        var body: Data?
+    }
+
+    private final class State: @unchecked Sendable {
+        private let lock = NSLock()
+        private var responses: [Response] = []
+        private var requests: [RecordedRequest] = []
+
+        func setResponses(_ responses: [Response]) {
+            lock.lock()
+            defer { lock.unlock() }
+            self.responses = responses
+            requests = []
+        }
+
+        func record(request: URLRequest, body: Data?) -> Response {
+            lock.lock()
+            defer { lock.unlock() }
+            requests.append(RecordedRequest(request: request, body: body))
+            if !responses.isEmpty {
+                return responses.removeFirst()
+            }
+            return Response(path: request.url?.path ?? "", contentType: "application/json", body: Data())
+        }
+
+        func recordedRequests() -> [RecordedRequest] {
+            lock.lock()
+            defer { lock.unlock() }
+            return requests
+        }
+    }
+
+    private static let state = State()
+
+    static var recordedRequests: [RecordedRequest] {
+        state.recordedRequests()
+    }
+
+    static func setResponses(_ responses: [Response]) {
+        state.setResponses(responses)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let body = request.httpBody ?? PacketExchangeURLProtocol.readBodyStream(request.httpBodyStream)
+        let configured = Self.state.record(request: request, body: body)
+        let statusCode = request.url?.path == configured.path ? 200 : 404
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: ["Content-Type": configured.contentType]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: configured.body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
 
 private actor MockPacketExchangeClient: AuroraPacketExchangeClient {
@@ -697,7 +1015,7 @@ private final class PacketExchangeURLProtocol: URLProtocol, @unchecked Sendable 
 
     override func stopLoading() {}
 
-    private static func readBodyStream(_ stream: InputStream?) -> Data? {
+    fileprivate static func readBodyStream(_ stream: InputStream?) -> Data? {
         guard let stream else {
             return nil
         }
@@ -715,6 +1033,85 @@ private final class PacketExchangeURLProtocol: URLProtocol, @unchecked Sendable 
             }
         }
         return data
+    }
+}
+
+private func makeAdmissionProof(
+    relayBucketID: Data,
+    tokenAuthenticator: Data,
+    expiryUnix: UInt64,
+    issuerMetadataHash: Data = Data(repeating: 0x46, count: 48)
+) -> Data {
+    var proof = Data()
+    let tokenKeyID = Data(repeating: 0x22, count: 32)
+    proof.appendVarint(0x000200)
+    proof.appendVarint(0x0002)
+    proof.append(Data(repeating: 0x11, count: 16))
+    proof.append(tokenKeyID)
+    proof.append(relayBucketID)
+    proof.append(Data(repeating: 0x33, count: 16))
+    proof.appendUInt64(expiryUnix)
+    proof.append(Data(repeating: 0x44, count: 32))
+    proof.append(Data(repeating: 0x55, count: 48))
+    proof.appendOpaque16(makeTokenMetadata(tokenKeyID: tokenKeyID, issuerMetadataHash: issuerMetadataHash))
+    proof.appendOpaque16(tokenAuthenticator)
+    proof.appendOpaque16(Data())
+    proof.appendVarint(0)
+    return proof
+}
+
+private func makeTokenMetadata(tokenKeyID: Data, issuerMetadataHash: Data) -> Data {
+    var metadata = Data()
+    metadata.appendUInt16(0x0002)
+    metadata.append(Data(repeating: 0x66, count: 32))
+    metadata.append(tokenKeyID)
+    metadata.appendOpaque16(Data("issuer".utf8))
+    metadata.appendOpaque16(Data("origin".utf8))
+    metadata.append(issuerMetadataHash)
+    return metadata
+}
+
+private extension Data {
+    mutating func appendUInt16(_ value: UInt16) {
+        append(UInt8((value >> 8) & 0xff))
+        append(UInt8(value & 0xff))
+    }
+
+    mutating func appendUInt64(_ value: UInt64) {
+        append(UInt8((value >> 56) & 0xff))
+        append(UInt8((value >> 48) & 0xff))
+        append(UInt8((value >> 40) & 0xff))
+        append(UInt8((value >> 32) & 0xff))
+        append(UInt8((value >> 24) & 0xff))
+        append(UInt8((value >> 16) & 0xff))
+        append(UInt8((value >> 8) & 0xff))
+        append(UInt8(value & 0xff))
+    }
+
+    mutating func appendOpaque16(_ value: Data) {
+        append(UInt8((value.count >> 8) & 0xff))
+        append(UInt8(value.count & 0xff))
+        append(value)
+    }
+
+    mutating func appendVarint(_ value: UInt64) {
+        switch value {
+        case 0...63:
+            append(UInt8(value))
+        case 64...16_383:
+            let encoded = UInt16(value) | 0x4000
+            append(UInt8((encoded >> 8) & 0xff))
+            append(UInt8(encoded & 0xff))
+        case 16_384...1_073_741_823:
+            let encoded = UInt32(value) | 0x8000_0000
+            append(UInt8((encoded >> 24) & 0xff))
+            append(UInt8((encoded >> 16) & 0xff))
+            append(UInt8((encoded >> 8) & 0xff))
+            append(UInt8(encoded & 0xff))
+        default:
+            let encoded = value | 0xc000_0000_0000_0000
+            appendUInt64(encoded)
+        }
     }
 }
 

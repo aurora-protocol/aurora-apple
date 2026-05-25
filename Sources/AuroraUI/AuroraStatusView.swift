@@ -18,6 +18,7 @@ public struct AuroraStatusView: View {
                         .autocorrectionDisabled()
                     LabeledContent("Route", value: controller.configuration.routePolicy)
                     LabeledContent("State", value: stateText)
+                    LabeledContent("Credential", value: credentialText)
                     LabeledContent("Packet", value: packetExchangeText)
                     LabeledContent("Tunnel", value: tunnelStateText)
                 }
@@ -40,6 +41,15 @@ public struct AuroraStatusView: View {
                         Label("Packet Check", systemImage: "arrow.left.arrow.right")
                     }
                     .disabled(isPacketChecking)
+
+                    Button {
+                        if controller.updateEndpoint(endpointText) {
+                            Task { await controller.issueAdmissionToken() }
+                        }
+                    } label: {
+                        Label("Issue Token", systemImage: "key")
+                    }
+                    .disabled(isCredentialIssuing)
                 }
 
                 Section {
@@ -95,6 +105,13 @@ public struct AuroraStatusView: View {
         return false
     }
 
+    private var isCredentialIssuing: Bool {
+        if case .issuing = controller.credentialState {
+            return true
+        }
+        return false
+    }
+
     private var isTunnelBusy: Bool {
         switch controller.tunnelState {
         case .installing, .connecting, .disconnecting:
@@ -110,6 +127,19 @@ public struct AuroraStatusView: View {
             return "idle"
         case .checking:
             return "checking"
+        case .ready:
+            return "ready"
+        case .unavailable(let reason):
+            return reason
+        }
+    }
+
+    private var credentialText: String {
+        switch controller.credentialState {
+        case .idle:
+            return "idle"
+        case .issuing:
+            return "issuing"
         case .ready:
             return "ready"
         case .unavailable(let reason):

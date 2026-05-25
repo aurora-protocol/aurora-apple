@@ -4,8 +4,8 @@ public protocol AuroraServerClient: Sendable {
     func fetchStatus(endpoint: URL) async throws -> AuroraServerStatus
 }
 
-public struct URLSessionAuroraServerClient: AuroraServerClient, AuroraPacketExchangeClient, @unchecked Sendable {
-    private let session: URLSession
+public struct URLSessionAuroraServerClient: AuroraServerClient, AuroraPacketExchangeClient, AuroraIssuerClient, @unchecked Sendable {
+    let session: URLSession
 
     public init(session: URLSession = .shared) {
         self.session = session
@@ -42,4 +42,8 @@ public struct URLSessionAuroraServerClient: AuroraServerClient, AuroraPacketExch
 
 public enum AuroraClientError: Error, Equatable {
     case unavailable
+    case invalidHex
+    case invalidIssueRequest(String)
+    case invalidIssuerResponse(String)
+    case invalidAdmissionProof(String)
 }
