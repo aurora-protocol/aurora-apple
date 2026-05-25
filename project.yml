@@ -66,6 +66,14 @@ targets:
       - path: Apps/iOS
     dependencies:
       - target: AuroraUI_iOS
+      - target: AuroraPacketTunnel_iOS
+        embed: true
+        codeSign: true
+    entitlements:
+      path: Apps/iOS/AuroraIOS.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
     info:
       path: Apps/iOS/Info.plist
       properties:
@@ -89,6 +97,11 @@ targets:
           - Info-macOS.plist
     dependencies:
       - target: AuroraKit_iOS
+    entitlements:
+      path: SharedNetworkExtension/AuroraPacketTunnel-iOS.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
     info:
       path: SharedNetworkExtension/Info-iOS.plist
       properties:
@@ -109,6 +122,14 @@ targets:
       - path: Apps/macOS
     dependencies:
       - target: AuroraUI_macOS
+      - target: AuroraPacketTunnel_macOS
+        embed: true
+        codeSign: true
+    entitlements:
+      path: Apps/macOS/AuroraMac.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
     info:
       path: Apps/macOS/Info.plist
       properties:
@@ -127,6 +148,11 @@ targets:
           - Info-macOS.plist
     dependencies:
       - target: AuroraKit_macOS
+    entitlements:
+      path: SharedNetworkExtension/AuroraPacketTunnel-macOS.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
     info:
       path: SharedNetworkExtension/Info-macOS.plist
       properties:

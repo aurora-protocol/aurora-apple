@@ -18,6 +18,7 @@ public struct AuroraStatusView: View {
                         .autocorrectionDisabled()
                     LabeledContent("Route", value: controller.configuration.routePolicy)
                     LabeledContent("State", value: stateText)
+                    LabeledContent("Tunnel", value: tunnelStateText)
                 }
 
                 Section {
@@ -29,6 +30,31 @@ public struct AuroraStatusView: View {
                         Label("Check Server", systemImage: "network")
                     }
                     .disabled(isChecking)
+                }
+
+                Section {
+                    Button {
+                        if controller.updateEndpoint(endpointText) {
+                            Task { await controller.installTunnel() }
+                        }
+                    } label: {
+                        Label("Install", systemImage: "gearshape")
+                    }
+                    .disabled(isTunnelBusy)
+
+                    Button {
+                        Task { await controller.startTunnel() }
+                    } label: {
+                        Label("Connect", systemImage: "play.fill")
+                    }
+                    .disabled(isTunnelBusy)
+
+                    Button(role: .destructive) {
+                        Task { await controller.stopTunnel() }
+                    } label: {
+                        Label("Disconnect", systemImage: "stop.fill")
+                    }
+                    .disabled(isTunnelBusy)
                 }
 
                 if let status = controller.lastStatus {
@@ -50,6 +76,15 @@ public struct AuroraStatusView: View {
         return false
     }
 
+    private var isTunnelBusy: Bool {
+        switch controller.tunnelState {
+        case .installing, .connecting, .disconnecting:
+            return true
+        case .disconnected, .installed, .connected, .unavailable:
+            return false
+        }
+    }
+
     private var stateText: String {
         switch controller.state {
         case .idle:
@@ -58,6 +93,25 @@ public struct AuroraStatusView: View {
             return "checking"
         case .ready:
             return "ready"
+        case .unavailable(let reason):
+            return reason
+        }
+    }
+
+    private var tunnelStateText: String {
+        switch controller.tunnelState {
+        case .disconnected:
+            return "disconnected"
+        case .installing:
+            return "installing"
+        case .installed:
+            return "installed"
+        case .connecting:
+            return "connecting"
+        case .connected:
+            return "connected"
+        case .disconnecting:
+            return "disconnecting"
         case .unavailable(let reason):
             return reason
         }

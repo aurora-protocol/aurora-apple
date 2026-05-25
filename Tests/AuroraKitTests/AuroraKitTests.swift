@@ -90,6 +90,43 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(tunnel.tunnelRemoteAddress, "127.0.0.1")
     }
 
+    func testTunnelProfileBuildsProviderConfigurationPayload() throws {
+        let endpoint = URL(string: "https://relay.example:9443")!
+        let profile = AuroraTunnelProfile(
+            configuration: AuroraConfiguration(endpoint: endpoint, routePolicy: "adversarial-dpi"),
+            providerBundleIdentifier: "org.aurora-protocol.aurora.ios.packet-tunnel"
+        )
+
+        XCTAssertEqual(profile.localizedDescription, "Aurora")
+        XCTAssertEqual(profile.providerBundleIdentifier, "org.aurora-protocol.aurora.ios.packet-tunnel")
+        XCTAssertEqual(profile.serverAddress, "https://relay.example:9443")
+        XCTAssertEqual(profile.providerConfiguration["endpoint"], "https://relay.example:9443")
+        XCTAssertEqual(profile.providerConfiguration["routePolicy"], "adversarial-dpi")
+    }
+
+    func testControllerInstallsAndStartsTunnelThroughInjectedManager() async {
+        let tunnelManager = MockTunnelManager()
+        let endpoint = URL(string: "https://relay.example:9443")!
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: endpoint, routePolicy: "balanced"),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            tunnelManager: tunnelManager
+        )
+
+        await controller.installTunnel()
+        await controller.startTunnel()
+        await controller.stopTunnel()
+
+        let events = await tunnelManager.events
+        let state = await controller.tunnelState
+        XCTAssertEqual(events, [
+            .install(endpoint: "https://relay.example:9443", routePolicy: "balanced"),
+            .start,
+            .stop,
+        ])
+        XCTAssertEqual(state, .disconnected)
+    }
+
     func testProjectBuildsSharedPacketTunnelTargets() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
@@ -102,6 +139,24 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(project.contains("type: app-extension"))
         XCTAssertTrue(project.contains("com.apple.networkextension.packet-tunnel"))
         XCTAssertTrue(project.contains("SharedNetworkExtension"))
+        XCTAssertTrue(project.contains("- target: AuroraPacketTunnel_iOS\n        embed: true"))
+        XCTAssertTrue(project.contains("- target: AuroraPacketTunnel_macOS\n        embed: true"))
+    }
+
+    func testProjectDeclaresPacketTunnelEntitlements() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let entitlementPaths = [
+            "Apps/iOS/AuroraIOS.entitlements",
+            "Apps/macOS/AuroraMac.entitlements",
+            "SharedNetworkExtension/AuroraPacketTunnel-iOS.entitlements",
+            "SharedNetworkExtension/AuroraPacketTunnel-macOS.entitlements",
+        ]
+
+        for path in entitlementPaths {
+            let entitlement = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+            XCTAssertTrue(entitlement.contains("com.apple.developer.networking.networkextension"), "\(path) missing Network Extension entitlement")
+            XCTAssertTrue(entitlement.contains("packet-tunnel-provider"), "\(path) missing packet tunnel entitlement value")
+        }
     }
 }
 
@@ -110,5 +165,34 @@ private struct MockServerClient: AuroraServerClient {
 
     func fetchStatus(endpoint: URL) async throws -> AuroraServerStatus {
         status
+    }
+}
+
+private actor MockTunnelManager: AuroraTunnelManager {
+    enum Event: Equatable {
+        case install(endpoint: String, routePolicy: String)
+        case start
+        case stop
+    }
+
+    private(set) var events: [Event] = []
+
+    func install(configuration: AuroraConfiguration) async throws {
+        events.append(.install(
+            endpoint: configuration.endpoint.absoluteString,
+            routePolicy: configuration.routePolicy
+        ))
+    }
+
+    func start() async throws {
+        events.append(.start)
+    }
+
+    func stop() async {
+        events.append(.stop)
+    }
+
+    func status() async -> AuroraTunnelConnectionStatus {
+        .disconnected
     }
 }

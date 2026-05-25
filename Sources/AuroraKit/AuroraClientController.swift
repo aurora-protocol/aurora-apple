@@ -10,18 +10,22 @@ public final class AuroraClientController: ObservableObject {
     }
 
     @Published public private(set) var state: State = .idle
+    @Published public private(set) var tunnelState: AuroraTunnelLifecycleState = .disconnected
     @Published public private(set) var lastStatus: AuroraServerStatus?
     @Published public private(set) var redactedDiagnosticLine: String = ""
 
     public var configuration: AuroraConfiguration
     private let serverClient: any AuroraServerClient
+    private let tunnelManager: any AuroraTunnelManager
 
     public init(
         configuration: AuroraConfiguration,
-        serverClient: any AuroraServerClient = URLSessionAuroraServerClient()
+        serverClient: any AuroraServerClient = URLSessionAuroraServerClient(),
+        tunnelManager: any AuroraTunnelManager = AuroraSystemTunnelManager()
     ) {
         self.configuration = configuration
         self.serverClient = serverClient
+        self.tunnelManager = tunnelManager
     }
 
     @discardableResult
@@ -49,6 +53,70 @@ public final class AuroraClientController: ObservableObject {
         } catch {
             state = .unavailable("server unavailable")
             redactedDiagnosticLine = AuroraRedactor.redact("endpoint=\(configuration.endpoint.absoluteString) error=\(error)")
+        }
+    }
+
+    public func installTunnel() async {
+        tunnelState = .installing
+        do {
+            try await tunnelManager.install(configuration: configuration)
+            tunnelState = .installed
+            redactedDiagnosticLine = AuroraRedactor.redact(
+                "endpoint=\(configuration.endpoint.absoluteString) tunnel=installed"
+            )
+        } catch {
+            tunnelState = .unavailable("tunnel unavailable")
+            redactedDiagnosticLine = AuroraRedactor.redact(
+                "endpoint=\(configuration.endpoint.absoluteString) tunnel_error=\(error)"
+            )
+        }
+    }
+
+    public func startTunnel() async {
+        tunnelState = .connecting
+        do {
+            try await tunnelManager.start()
+            tunnelState = .connected
+            redactedDiagnosticLine = AuroraRedactor.redact(
+                "endpoint=\(configuration.endpoint.absoluteString) tunnel=connected"
+            )
+        } catch {
+            tunnelState = .unavailable("tunnel unavailable")
+            redactedDiagnosticLine = AuroraRedactor.redact(
+                "endpoint=\(configuration.endpoint.absoluteString) tunnel_error=\(error)"
+            )
+        }
+    }
+
+    public func stopTunnel() async {
+        tunnelState = .disconnecting
+        await tunnelManager.stop()
+        tunnelState = .disconnected
+        redactedDiagnosticLine = AuroraRedactor.redact(
+            "endpoint=\(configuration.endpoint.absoluteString) tunnel=disconnected"
+        )
+    }
+
+    public func refreshTunnelStatus() async {
+        tunnelState = AuroraTunnelLifecycleState(await tunnelManager.status())
+    }
+}
+
+private extension AuroraTunnelLifecycleState {
+    init(_ status: AuroraTunnelConnectionStatus) {
+        switch status {
+        case .invalid:
+            self = .unavailable("tunnel unavailable")
+        case .disconnected:
+            self = .disconnected
+        case .connecting:
+            self = .connecting
+        case .connected:
+            self = .connected
+        case .reasserting:
+            self = .connecting
+        case .disconnecting:
+            self = .disconnecting
         }
     }
 }

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		01A96E5CD03571373207D8AC /* AuroraMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81A23FDA7A008D4DC3DD736E /* AuroraMacApp.swift */; };
 		0C7688C3E47E71EA1B8C826D /* AuroraUI_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50C04D738D8E44ACCFBD3944 /* AuroraUI_iOS.framework */; };
+		107E8DF94A5E1F62D06B8F78 /* AuroraTunnelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0E1EB4E6547496142467EE /* AuroraTunnelManager.swift */; };
 		11AC7E8E14A2881226E2D86A /* AuroraUI_iOS.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 50C04D738D8E44ACCFBD3944 /* AuroraUI_iOS.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		12A5B53F26CBFAA4C7067EEA /* AuroraStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F36CC12D00ACADF86361E1 /* AuroraStatusView.swift */; };
 		1D476DAA0BB105B69879EED1 /* AuroraRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */; };
@@ -16,6 +17,8 @@
 		3EEF3C87016C1831AE79E785 /* AuroraKit_macOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D0D733810C55062FF37301F /* AuroraKit_macOS.framework */; };
 		465EFAB81224D9A0DF360A21 /* AuroraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */; };
 		4BC9AED6277DFEAF4827D5F1 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9214C975B7F71AE4F37751FC /* PacketTunnelProvider.swift */; };
+		54A670EEA6C0FCD1033F0A96 /* AuroraTunnelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0E1EB4E6547496142467EE /* AuroraTunnelManager.swift */; };
+		5666F396602D29CE1B29871C /* AuroraPacketTunnel_iOS.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1E0F3643EC451ED6E21A8018 /* AuroraPacketTunnel_iOS.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		60B10D696D804773ADFD5991 /* AuroraUI_macOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A535DB687DFDC5E17200527D /* AuroraUI_macOS.framework */; };
 		6342FD7E19ADB4AB19BC0706 /* AuroraPacketTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */; };
 		65CE6DAD89B9A01064598C32 /* AuroraClientController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */; };
@@ -23,6 +26,7 @@
 		77A9C275212DE7D6F6DC6849 /* AuroraServerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */; };
 		82BF269D64073CDEA6F3157D /* AuroraIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E655A1A7022F9A9D8B35243 /* AuroraIOSApp.swift */; };
 		89BB60E3B59F891FE3753B23 /* AuroraUI_macOS.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A535DB687DFDC5E17200527D /* AuroraUI_macOS.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		89D4765F78D3F4FBDAC074A7 /* AuroraPacketTunnel_macOS.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 942479B97E7B955AD816E7FF /* AuroraPacketTunnel_macOS.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		906AAAB771CBB98386353322 /* AuroraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */; };
 		C5E59A21794A460372C7D8DD /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
 		CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */; };
@@ -34,6 +38,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		1AB88750F26199EE97B16AA3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 67D5BDDFABD67FCBA0DE30A1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 29F940B02973FC1BCB624D5C;
+			remoteInfo = AuroraPacketTunnel_macOS;
+		};
 		5B67A7CD745303E36BBE5CE7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 67D5BDDFABD67FCBA0DE30A1 /* Project object */;
@@ -47,6 +58,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = EF2BA7013CCD8641859F0A6F;
 			remoteInfo = AuroraUI_macOS;
+		};
+		8C8629D2E9576BACD3EF3F4A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 67D5BDDFABD67FCBA0DE30A1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EBE4D0789D2928EB2BB58542;
+			remoteInfo = AuroraPacketTunnel_iOS;
 		};
 		951BE81C989E822F89F5119E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -101,6 +119,28 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		51EFD032D71420DAD83C675C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				5666F396602D29CE1B29871C /* AuroraPacketTunnel_iOS.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9CFD10961C7CA035BADDF1BE /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				89D4765F78D3F4FBDAC074A7 /* AuroraPacketTunnel_macOS.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -111,11 +151,14 @@
 		2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraPacketTunnelConfiguration.swift; sourceTree = "<group>"; };
 		3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraServerClient.swift; sourceTree = "<group>"; };
 		3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraRedactor.swift; sourceTree = "<group>"; };
+		44A3FB58DED713406FD9E577 /* AuroraPacketTunnel-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "AuroraPacketTunnel-iOS.entitlements"; sourceTree = "<group>"; };
 		49329FE830B3AD5F8B8E880E /* AuroraIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AuroraIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4D0DD0772BAC7537925C25EB /* AuroraPacketTunnel-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "AuroraPacketTunnel-macOS.entitlements"; sourceTree = "<group>"; };
 		50C04D738D8E44ACCFBD3944 /* AuroraUI_iOS.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AuroraUI_iOS.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		5E655A1A7022F9A9D8B35243 /* AuroraIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraIOSApp.swift; sourceTree = "<group>"; };
 		62F36CC12D00ACADF86361E1 /* AuroraStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraStatusView.swift; sourceTree = "<group>"; };
 		6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraClientController.swift; sourceTree = "<group>"; };
+		77559EA22FB4DB3601AE2E57 /* AuroraMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AuroraMac.entitlements; sourceTree = "<group>"; };
 		81A23FDA7A008D4DC3DD736E /* AuroraMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraMacApp.swift; sourceTree = "<group>"; };
 		8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AuroraKit_iOS.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		9214C975B7F71AE4F37751FC /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
@@ -123,6 +166,8 @@
 		9D0D733810C55062FF37301F /* AuroraKit_macOS.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AuroraKit_macOS.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A535DB687DFDC5E17200527D /* AuroraUI_macOS.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AuroraUI_macOS.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		B181F29A5770BB1A4A64286E /* AuroraMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AuroraMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D7372C48806EACF6199E67BA /* AuroraIOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AuroraIOS.entitlements; sourceTree = "<group>"; };
+		EC0E1EB4E6547496142467EE /* AuroraTunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraTunnelManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -180,6 +225,7 @@
 		2C61BA5363F9AB86067A49B1 /* macOS */ = {
 			isa = PBXGroup;
 			children = (
+				77559EA22FB4DB3601AE2E57 /* AuroraMac.entitlements */,
 				81A23FDA7A008D4DC3DD736E /* AuroraMacApp.swift */,
 				0CF99D8F07F11E19094060F8 /* Info.plist */,
 			);
@@ -195,6 +241,7 @@
 				2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */,
 				3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */,
 				3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */,
+				EC0E1EB4E6547496142467EE /* AuroraTunnelManager.swift */,
 			);
 			name = AuroraKit;
 			path = Sources/AuroraKit;
@@ -203,6 +250,7 @@
 		4F929F6D5DDE41C0FA62FFE3 /* iOS */ = {
 			isa = PBXGroup;
 			children = (
+				D7372C48806EACF6199E67BA /* AuroraIOS.entitlements */,
 				5E655A1A7022F9A9D8B35243 /* AuroraIOSApp.swift */,
 				23F6127B1927646AB2786F7E /* Info.plist */,
 			);
@@ -213,6 +261,8 @@
 		7599BDC3C1299CC39DAB59DA /* SharedNetworkExtension */ = {
 			isa = PBXGroup;
 			children = (
+				44A3FB58DED713406FD9E577 /* AuroraPacketTunnel-iOS.entitlements */,
+				4D0DD0772BAC7537925C25EB /* AuroraPacketTunnel-macOS.entitlements */,
 				9214C975B7F71AE4F37751FC /* PacketTunnelProvider.swift */,
 			);
 			path = SharedNetworkExtension;
@@ -299,12 +349,14 @@
 			buildPhases = (
 				9F5A0AD77E27DDE721C2E2EE /* Sources */,
 				73116F0DF05B50EC74A24855 /* Frameworks */,
+				51EFD032D71420DAD83C675C /* Embed Foundation Extensions */,
 				0808BA3BD2A45624AFB753EB /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				AB7539DA4F4A3013D57FA0D2 /* PBXTargetDependency */,
+				035C9A8843DD3BD2B8A106A5 /* PBXTargetDependency */,
 			);
 			name = AuroraIOS;
 			packageProductDependencies = (
@@ -338,12 +390,14 @@
 			buildPhases = (
 				C36054F7F3204EFBA713DB82 /* Sources */,
 				6D608C9CEF15D2472DFCDD79 /* Frameworks */,
+				9CFD10961C7CA035BADDF1BE /* Embed Foundation Extensions */,
 				1F77C733297EDF45E6E38C0F /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				A2B009F08D5FCC19063039A4 /* PBXTargetDependency */,
+				99368C30D1CE6956643D0633 /* PBXTargetDependency */,
 			);
 			name = AuroraMac;
 			packageProductDependencies = (
@@ -454,6 +508,7 @@
 				CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				1D476DAA0BB105B69879EED1 /* AuroraRedactor.swift in Sources */,
 				77A9C275212DE7D6F6DC6849 /* AuroraServerClient.swift in Sources */,
+				107E8DF94A5E1F62D06B8F78 /* AuroraTunnelManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -466,6 +521,7 @@
 				6342FD7E19ADB4AB19BC0706 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				F398C96FB2AA206560021F08 /* AuroraRedactor.swift in Sources */,
 				E416114E84202364870CF8FF /* AuroraServerClient.swift in Sources */,
+				54A670EEA6C0FCD1033F0A96 /* AuroraTunnelManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -520,6 +576,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		035C9A8843DD3BD2B8A106A5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EBE4D0789D2928EB2BB58542 /* AuroraPacketTunnel_iOS */;
+			targetProxy = 8C8629D2E9576BACD3EF3F4A /* PBXContainerItemProxy */;
+		};
 		3638B6F13270EA611956A4CC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 022B2DF2F5DCF039DC08463B /* AuroraKit_macOS */;
@@ -529,6 +590,11 @@
 			isa = PBXTargetDependency;
 			target = 022B2DF2F5DCF039DC08463B /* AuroraKit_macOS */;
 			targetProxy = C676251FC46660FC91E9FE16 /* PBXContainerItemProxy */;
+		};
+		99368C30D1CE6956643D0633 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 29F940B02973FC1BCB624D5C /* AuroraPacketTunnel_macOS */;
+			targetProxy = 1AB88750F26199EE97B16AA3 /* PBXContainerItemProxy */;
 		};
 		A2B009F08D5FCC19063039A4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -557,6 +623,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = "SharedNetworkExtension/AuroraPacketTunnel-iOS.entitlements";
 				INFOPLIST_FILE = "SharedNetworkExtension/Info-iOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -575,6 +642,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Apps/iOS/AuroraIOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = Apps/iOS/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -592,6 +660,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Apps/macOS/AuroraMac.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = Apps/macOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -723,6 +792,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = "SharedNetworkExtension/AuroraPacketTunnel-macOS.entitlements";
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = "SharedNetworkExtension/Info-macOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -766,6 +836,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = "SharedNetworkExtension/AuroraPacketTunnel-iOS.entitlements";
 				INFOPLIST_FILE = "SharedNetworkExtension/Info-iOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -884,6 +955,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Apps/macOS/AuroraMac.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = Apps/macOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -899,6 +971,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Apps/iOS/AuroraIOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = Apps/iOS/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -916,6 +989,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = "SharedNetworkExtension/AuroraPacketTunnel-macOS.entitlements";
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = "SharedNetworkExtension/Info-macOS.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
