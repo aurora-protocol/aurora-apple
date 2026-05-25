@@ -70,6 +70,33 @@ public struct AuroraTunnelProfile {
     }
 }
 
+public struct AuroraTunnelConfigurationResolver: Sendable {
+    private let fallbackConfiguration: AuroraConfiguration
+    private let profileStore: (any AuroraPortableProfileStore)?
+
+    public init(
+        fallbackConfiguration: AuroraConfiguration,
+        profileStore: (any AuroraPortableProfileStore)? = nil
+    ) {
+        self.fallbackConfiguration = fallbackConfiguration
+        self.profileStore = profileStore
+    }
+
+    public func configuration(providerConfiguration: [String: Any]?) -> AuroraConfiguration {
+        if let configuration = AuroraTunnelProfile.configuration(from: providerConfiguration) {
+            return configuration
+        }
+        guard let profileStore,
+              let profileText = try? profileStore.loadPortableProfile(),
+              let profile = try? AuroraPortableProfile.parse(profileText)
+        else {
+            return fallbackConfiguration
+        }
+        try? profileStore.savePortableProfile(profile.tomlString())
+        return profile.configuration(defaultEndpoint: fallbackConfiguration.endpoint)
+    }
+}
+
 public enum AuroraTunnelProviderBundleIdentifier {
     public static let iOS = "org.aurora-protocol.aurora.ios.packet-tunnel"
     public static let macOS = "org.aurora-protocol.aurora.macos.packet-tunnel"

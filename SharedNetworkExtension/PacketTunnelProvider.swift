@@ -4,7 +4,12 @@ import Network
 import NetworkExtension
 
 final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
-    private let fallbackConfiguration = AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!)
+    private let configurationResolver = AuroraTunnelConfigurationResolver(
+        fallbackConfiguration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+        profileStore: AuroraUserDefaultsProfileStore(
+            appGroupIdentifier: AuroraAppleSharedContainer.appGroupIdentifier()
+        )
+    )
     private let serverClient = URLSessionAuroraServerClient()
     private let pathObserver = NetworkPathObserver()
     private var runtime: AuroraPacketTunnelRuntime?
@@ -81,12 +86,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     }
 
     private func resolvedConfiguration() -> AuroraConfiguration {
-        guard let tunnelProtocol = protocolConfiguration as? NETunnelProviderProtocol,
-              let configuration = AuroraTunnelProfile.configuration(from: tunnelProtocol.providerConfiguration)
-        else {
-            return fallbackConfiguration
-        }
-        return configuration
+        let providerConfiguration = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration
+        return configurationResolver.configuration(providerConfiguration: providerConfiguration)
     }
 
     private func networkSettings(for configuration: AuroraPacketTunnelConfiguration) -> NEPacketTunnelNetworkSettings {

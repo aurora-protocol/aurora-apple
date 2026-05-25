@@ -655,6 +655,99 @@ final class AuroraKitTests: XCTestCase {
         ]))
     }
 
+    func testTunnelConfigurationResolverPrefersProviderConfiguration() throws {
+        let store = MockPortableProfileStore(initialProfileText: """
+        [aurora]
+        version = "2.0"
+        profile = "adversarial-dpi"
+        route = "split-2"
+        speed = "balanced"
+
+        [local]
+        mode = "platform-vpn"
+        dns = "through-aurora"
+
+        [methods]
+        allow_h2 = true
+        allow_h1_ws = true
+        allow_h3_ext_dgram = false
+        allow_masque = false
+
+        [security]
+        require_pq = true
+        require_split2_for_adversarial = true
+        allow_lab_tokens = false
+
+        [storage]
+        replay_cache = "sqlite"
+
+        [x.aurora.apple]
+        endpoint = "https://stored.example:9443"
+        """)
+        let resolver = AuroraTunnelConfigurationResolver(
+            fallbackConfiguration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            profileStore: store
+        )
+
+        let configuration = resolver.configuration(providerConfiguration: [
+            AuroraTunnelProfile.endpointKey: "https://provider.example:9443",
+            AuroraTunnelProfile.routePolicyKey: "balanced",
+        ])
+
+        XCTAssertEqual(configuration.endpoint.absoluteString, "https://provider.example:9443")
+        XCTAssertEqual(configuration.routePolicy, "balanced")
+    }
+
+    func testTunnelConfigurationResolverLoadsStoredPortableProfileAndMigratesSanitizedProfile() throws {
+        let store = MockPortableProfileStore(initialProfileText: """
+        [aurora]
+        version = "2.0"
+        profile = "adversarial-dpi"
+        route = "split-2"
+        speed = "balanced"
+
+        [local]
+        mode = "platform-vpn"
+        dns = "through-aurora"
+
+        [methods]
+        allow_h2 = true
+        allow_h1_ws = true
+        allow_h3_ext_dgram = false
+        allow_masque = false
+
+        [security]
+        require_pq = true
+        require_split2_for_adversarial = true
+        allow_lab_tokens = false
+
+        [storage]
+        replay_cache = "sqlite"
+
+        [x.aurora.apple]
+        endpoint = "https://stored.example:9443"
+        admission_proof = "secret-proof"
+        token_authenticator = "secret-token"
+        hint_secret = "secret-hint"
+        """)
+        let resolver = AuroraTunnelConfigurationResolver(
+            fallbackConfiguration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            profileStore: store
+        )
+
+        let configuration = resolver.configuration(providerConfiguration: nil)
+        let migratedProfile = try XCTUnwrap(store.savedProfileText)
+
+        XCTAssertEqual(configuration.endpoint.absoluteString, "https://stored.example:9443")
+        XCTAssertEqual(configuration.routePolicy, "adversarial-dpi")
+        XCTAssertFalse(migratedProfile.contains("secret-proof"))
+        XCTAssertFalse(migratedProfile.contains("secret-token"))
+        XCTAssertFalse(migratedProfile.contains("secret-hint"))
+        XCTAssertFalse(migratedProfile.contains("admission_proof"))
+        XCTAssertFalse(migratedProfile.contains("token_authenticator"))
+        XCTAssertFalse(migratedProfile.contains("hint_secret"))
+    }
+
     func testPortableProfileParsesConfigFloorAndAppleEndpointExtension() throws {
         let profile = try AuroraPortableProfile.parse("""
         [aurora]
@@ -1218,6 +1311,18 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(view.contains("importPortableProfile"), "status view does not call controller profile import")
         XCTAssertTrue(view.contains("exportPortableProfile"), "status view does not call controller profile export")
         XCTAssertTrue(view.contains("loadStoredPortableProfile"), "status view does not load stored portable profiles")
+    }
+
+    func testPacketTunnelProviderUsesSharedProfileStoreFallback() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let provider = try String(
+            contentsOf: root.appendingPathComponent("SharedNetworkExtension/PacketTunnelProvider.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(provider.contains("AuroraTunnelConfigurationResolver"), "packet tunnel provider missing shared resolver")
+        XCTAssertTrue(provider.contains("AuroraUserDefaultsProfileStore"), "packet tunnel provider missing App Group profile store")
+        XCTAssertTrue(provider.contains("AuroraAppleSharedContainer.appGroupIdentifier()"), "packet tunnel provider missing App Group scope")
     }
 
     func testAppsConstructControllersWithSharedAppGroupProfileStore() throws {
