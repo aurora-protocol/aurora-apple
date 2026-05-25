@@ -219,12 +219,19 @@ public actor AuroraPacketTunnelRuntime {
 public actor AuroraServerBackedPacketTunnelCore: AuroraPacketTunnelCore {
     private let statusClient: any AuroraServerClient
     private let packetClient: any AuroraPacketExchangeClient
+    private let issuerClient: (any AuroraIssuerClient)?
+    private let tokenWallet: AuroraTokenWallet?
     private var configuration: AuroraConfiguration?
     private var latestPathChange: AuroraNetworkPathChange?
 
-    public init(serverClient: any AuroraServerClient & AuroraPacketExchangeClient = URLSessionAuroraServerClient()) {
+    public init(
+        serverClient: any AuroraServerClient & AuroraPacketExchangeClient & AuroraIssuerClient = URLSessionAuroraServerClient(),
+        tokenWallet: AuroraTokenWallet = AuroraTokenWallet()
+    ) {
         self.statusClient = serverClient
         self.packetClient = serverClient
+        self.issuerClient = serverClient
+        self.tokenWallet = tokenWallet
     }
 
     public init(
@@ -233,13 +240,28 @@ public actor AuroraServerBackedPacketTunnelCore: AuroraPacketTunnelCore {
     ) {
         self.statusClient = statusClient
         self.packetClient = packetClient
+        self.issuerClient = nil
+        self.tokenWallet = nil
+    }
+
+    public init(
+        statusClient: any AuroraServerClient,
+        packetClient: any AuroraPacketExchangeClient,
+        issuerClient: any AuroraIssuerClient,
+        tokenWallet: AuroraTokenWallet
+    ) {
+        self.statusClient = statusClient
+        self.packetClient = packetClient
+        self.issuerClient = issuerClient
+        self.tokenWallet = tokenWallet
     }
 
     public func connect(configuration: AuroraConfiguration) async throws {
         let status = try await statusClient.fetchStatus(endpoint: configuration.endpoint)
-        guard status.ready else {
+        guard status.ready, status.issuer else {
             throw AuroraClientError.unavailable
         }
+        try await issueAdmissionTokenIfConfigured(endpoint: configuration.endpoint)
         self.configuration = configuration
     }
 
@@ -256,5 +278,30 @@ public actor AuroraServerBackedPacketTunnelCore: AuroraPacketTunnelCore {
 
     public func close() async {
         configuration = nil
+    }
+
+    private func issueAdmissionTokenIfConfigured(endpoint: URL) async throws {
+        guard let issuerClient, let tokenWallet else {
+            return
+        }
+        let metadata = try await issuerClient.fetchIssuerMetadata(endpoint: endpoint)
+        guard !metadata.issuerMetadata.isEmpty, metadata.issuerMetadataHash.count == 48 else {
+            throw AuroraClientError.invalidIssuerResponse("issuer metadata unavailable")
+        }
+        let request = try AuroraBlindRSAIssueRequest.random(
+            nowUnix: Int64(Date().timeIntervalSince1970)
+        )
+        let issued = try await issuerClient.issueBlindRSAAdmissionToken(endpoint: endpoint, request: request)
+        guard issued.issuerMetadataHash.isEmpty || issued.issuerMetadataHash == metadata.issuerMetadataHash else {
+            throw AuroraClientError.invalidAdmissionProof("issuer metadata hash mismatch")
+        }
+        try await tokenWallet.store(AuroraTokenWalletEntry(
+            relayBucketID: issued.relayBucketIDHex,
+            accessHintCredential: Data(),
+            admissionProof: issued.admissionProof,
+            tokenAuthenticator: issued.tokenAuthenticator,
+            hintSecret: Data(),
+            expiresAtUnix: issued.expiryUnix
+        ))
     }
 }

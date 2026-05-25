@@ -552,6 +552,70 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(requestedBatch, inbound)
     }
 
+    func testServerBackedPacketTunnelCoreIssuesAdmissionTokenBeforePacketExchange() async throws {
+        let statusClient = MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
+        let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x15])],
+            protocolNumbers: [2]
+        ))
+        let store = MockSecureCredentialStore()
+        let wallet = AuroraTokenWallet(credentialStore: store)
+        let issued = AuroraIssuedAdmissionToken(
+            admissionProof: Data("secret-proof".utf8),
+            relayBucketID: Data(repeating: 0x81, count: 16),
+            tokenAuthenticator: Data("secret-token".utf8),
+            issuerMetadataHash: Data(repeating: 0x46, count: 48),
+            expiryUnix: 1_800_000_000
+        )
+        let issuerClient = MockIssuerClient(issuedToken: issued)
+        let core = AuroraServerBackedPacketTunnelCore(
+            statusClient: statusClient,
+            packetClient: packetClient,
+            issuerClient: issuerClient,
+            tokenWallet: wallet
+        )
+        let configuration = AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!)
+        let inbound = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        )
+
+        try await core.connect(configuration: configuration)
+        _ = try await core.ingestPacketBatch(inbound)
+
+        let requestedIssue = await issuerClient.requestedIssue
+        let saved = try await wallet.load(relayBucketID: Data(repeating: 0x81, count: 16).auroraHexString)
+        XCTAssertEqual(requestedIssue?.tokenNonce.count, 32)
+        XCTAssertEqual(requestedIssue?.redemptionContextHash.count, 48)
+        XCTAssertEqual(saved?.admissionProof, Data("secret-proof".utf8))
+        XCTAssertEqual(saved?.tokenAuthenticator, Data("secret-token".utf8))
+        XCTAssertEqual(saved?.expiresAtUnix, 1_800_000_000)
+    }
+
+    func testServerBackedPacketTunnelCoreDoesNotConnectWhenIssuerFails() async throws {
+        let statusClient = MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
+        let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x15])],
+            protocolNumbers: [2]
+        ))
+        let core = AuroraServerBackedPacketTunnelCore(
+            statusClient: statusClient,
+            packetClient: packetClient,
+            issuerClient: MockIssuerClient(error: AuroraClientError.unavailable),
+            tokenWallet: AuroraTokenWallet(credentialStore: MockSecureCredentialStore())
+        )
+
+        do {
+            try await core.connect(configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!))
+            XCTFail("connect should fail when issuer token issuance fails")
+        } catch {
+            XCTAssertEqual(error as? AuroraClientError, .unavailable)
+        }
+
+        let packetEndpoint = await packetClient.requestedEndpoint
+        XCTAssertNil(packetEndpoint)
+    }
+
     func testURLSessionServerClientPostsPacketBatchToPrivateCarrierSlot() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PacketExchangeURLProtocol.self]
