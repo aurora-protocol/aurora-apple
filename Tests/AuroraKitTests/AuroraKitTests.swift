@@ -155,6 +155,109 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(state, .unavailable("invalid server"))
     }
 
+    func testControllerImportsPortableProfileAndResetsDerivedState() async {
+        let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x15])],
+            protocolNumbers: [2]
+        ))
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            packetClient: packetClient
+        )
+        await controller.refreshStatus()
+        await controller.checkPacketExchange()
+
+        let imported = await controller.importPortableProfile("""
+        [aurora]
+        version = "2.0"
+        profile = "adversarial-dpi"
+        route = "split-2"
+        speed = "balanced"
+
+        [local]
+        mode = "platform-vpn"
+        dns = "through-aurora"
+
+        [methods]
+        allow_h2 = true
+        allow_h1_ws = true
+        allow_h3_ext_dgram = false
+        allow_masque = false
+
+        [security]
+        require_pq = true
+        require_split2_for_adversarial = true
+        allow_lab_tokens = false
+
+        [storage]
+        replay_cache = "sqlite"
+
+        [x.aurora.apple]
+        endpoint = "https://relay.example:9443"
+        """)
+
+        let configuration = await controller.configuration
+        let state = await controller.state
+        let packetState = await controller.packetExchangeState
+        let credentialState = await controller.credentialState
+        let tunnelState = await controller.tunnelState
+        let lastStatus = await controller.lastStatus
+        let lastPacketExchange = await controller.lastPacketExchange
+        let diagnostic = await controller.redactedDiagnosticLine
+        XCTAssertTrue(imported)
+        XCTAssertEqual(configuration.endpoint.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(configuration.routePolicy, "adversarial-dpi")
+        XCTAssertNil(lastStatus)
+        XCTAssertNil(lastPacketExchange)
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(packetState, .idle)
+        XCTAssertEqual(credentialState, .idle)
+        XCTAssertEqual(tunnelState, .disconnected)
+        XCTAssertTrue(diagnostic.contains("profile_import=ready"))
+    }
+
+    func testControllerRejectsInvalidPortableProfileWithoutChangingConfiguration() async {
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
+        )
+
+        let imported = await controller.importPortableProfile("""
+        [security]
+        allow_plaintext_tokens = true
+        """)
+        let configuration = await controller.configuration
+        let state = await controller.state
+
+        XCTAssertFalse(imported)
+        XCTAssertEqual(configuration.endpoint.absoluteString, "http://127.0.0.1:9443")
+        XCTAssertEqual(state, .unavailable("invalid profile"))
+    }
+
+    func testControllerExportsPortableProfileWithoutCredentialMaterial() async throws {
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(
+                endpoint: URL(string: "https://relay.example:9443")!,
+                routePolicy: "adversarial-dpi"
+            ),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
+        )
+
+        let exported = await controller.exportPortableProfile(route: "split-2", localMode: "platform-vpn")
+        let reparsed = try AuroraPortableProfile.parse(exported)
+
+        XCTAssertTrue(exported.contains("[aurora]"))
+        XCTAssertTrue(exported.contains("[x.aurora.apple]"))
+        XCTAssertFalse(exported.contains("admission_proof"))
+        XCTAssertFalse(exported.contains("token_authenticator"))
+        XCTAssertFalse(exported.contains("hint_secret"))
+        XCTAssertEqual(reparsed.endpoint?.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(reparsed.profile, "adversarial-dpi")
+        XCTAssertEqual(reparsed.route, "split-2")
+        XCTAssertEqual(reparsed.localMode, "platform-vpn")
+    }
+
     func testControllerChecksPacketExchangeThroughInjectedClient() async {
         let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
             packets: [Data([0x45, 0x00, 0x00, 0x15])],
@@ -924,6 +1027,20 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(project.contains("$(AppIdentifierPrefix)org.aurora-protocol.aurora.shared"), "project.yml missing shared keychain access group generation")
         XCTAssertTrue(project.contains("AuroraAppGroupIdentifier"), "project.yml missing App Group Info.plist generation")
         XCTAssertTrue(project.contains("AuroraKeychainAccessGroup"), "project.yml missing keychain Info.plist generation")
+    }
+
+    func testSharedUIExposesPortableProfileImportExport() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let view = try String(
+            contentsOf: root.appendingPathComponent("Sources/AuroraUI/AuroraStatusView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(view.contains("TextEditor"), "status view missing portable profile editor")
+        XCTAssertTrue(view.contains("Import Profile"), "status view missing import action")
+        XCTAssertTrue(view.contains("Export Profile"), "status view missing export action")
+        XCTAssertTrue(view.contains("importPortableProfile"), "status view does not call controller profile import")
+        XCTAssertTrue(view.contains("exportPortableProfile"), "status view does not call controller profile export")
     }
 
     func testIOSAppDeclaresCompleteOrientationSet() throws {

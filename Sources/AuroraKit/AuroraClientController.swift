@@ -59,21 +59,41 @@ public final class AuroraClientController: ObservableObject {
     public func updateEndpoint(_ endpointText: String) -> Bool {
         guard let endpoint = AuroraConfiguration.validatedEndpoint(from: endpointText) else {
             state = .unavailable("invalid server")
-            lastPacketExchange = nil
-            packetExchangeState = .idle
-            lastIssuedToken = nil
-            credentialState = .idle
+            resetServerDerivedState()
             return false
         }
         configuration.endpoint = endpoint
-        lastStatus = nil
+        resetServerDerivedState()
         state = .idle
-        lastPacketExchange = nil
-        packetExchangeState = .idle
-        lastIssuedToken = nil
-        credentialState = .idle
         redactedDiagnosticLine = AuroraRedactor.redact("endpoint=\(endpoint.absoluteString)")
         return true
+    }
+
+    @discardableResult
+    public func importPortableProfile(_ profileText: String) -> Bool {
+        do {
+            let profile = try AuroraPortableProfile.parse(profileText)
+            configuration = profile.configuration(defaultEndpoint: configuration.endpoint)
+            resetServerDerivedState()
+            state = .idle
+            redactedDiagnosticLine = AuroraRedactor.redact(
+                "endpoint=\(configuration.endpoint.absoluteString) profile_import=ready route_policy=\(configuration.routePolicy)"
+            )
+            return true
+        } catch {
+            state = .unavailable("invalid profile")
+            resetServerDerivedState()
+            redactedDiagnosticLine = AuroraRedactor.redact("profile_import_error=\(error)")
+            return false
+        }
+    }
+
+    public func exportPortableProfile(route: String = "auto", localMode: String = "platform-vpn") -> String {
+        AuroraPortableProfile(
+            configuration: configuration,
+            route: route,
+            localMode: localMode
+        ).tomlString()
     }
 
     public func refreshStatus() async {
@@ -223,6 +243,14 @@ public final class AuroraClientController: ObservableObject {
 
     public func refreshTunnelStatus() async {
         tunnelState = AuroraTunnelLifecycleState(await tunnelManager.status())
+    }
+
+    private func resetServerDerivedState() {
+        lastStatus = nil
+        lastPacketExchange = nil
+        packetExchangeState = .idle
+        lastIssuedToken = nil
+        credentialState = .idle
     }
 }
 

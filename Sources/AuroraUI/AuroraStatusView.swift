@@ -4,10 +4,12 @@ import SwiftUI
 public struct AuroraStatusView: View {
     @ObservedObject private var controller: AuroraClientController
     @State private var endpointText: String
+    @State private var profileText: String
 
     public init(controller: AuroraClientController) {
         self.controller = controller
         _endpointText = State(initialValue: controller.configuration.endpoint.absoluteString)
+        _profileText = State(initialValue: "")
     }
 
     public var body: some View {
@@ -84,6 +86,30 @@ public struct AuroraStatusView: View {
                         LabeledContent("Ready", value: status.ready ? "yes" : "no")
                         LabeledContent("Issuer", value: status.issuer ? "available" : "unavailable")
                         LabeledContent("Cover", value: status.cover ? "available" : "unavailable")
+                    }
+                }
+
+                Section {
+                    TextEditor(text: $profileText)
+                        .font(.system(.footnote, design: .monospaced))
+                        .frame(minHeight: 120)
+
+                    HStack {
+                        Button {
+                            if controller.importPortableProfile(profileText) {
+                                endpointText = controller.configuration.endpoint.absoluteString
+                            }
+                        } label: {
+                            Label("Import Profile", systemImage: "square.and.arrow.down")
+                        }
+
+                        Spacer()
+
+                        Button {
+                            profileText = controller.exportPortableProfile()
+                        } label: {
+                            Label("Export Profile", systemImage: "square.and.arrow.up")
+                        }
                     }
                 }
             }
