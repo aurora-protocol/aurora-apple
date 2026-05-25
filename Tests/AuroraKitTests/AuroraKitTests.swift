@@ -808,6 +808,38 @@ final class AuroraKitTests: XCTestCase {
         }
     }
 
+    func testProjectDeclaresSharedAppGroupAndKeychainAccessGroups() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let entitlementPaths = [
+            "Apps/iOS/AuroraIOS.entitlements",
+            "Apps/macOS/AuroraMac.entitlements",
+            "SharedNetworkExtension/AuroraPacketTunnel-iOS.entitlements",
+            "SharedNetworkExtension/AuroraPacketTunnel-macOS.entitlements",
+        ]
+        let infoPaths = [
+            "Apps/iOS/Info.plist",
+            "Apps/macOS/Info.plist",
+            "SharedNetworkExtension/Info-iOS.plist",
+            "SharedNetworkExtension/Info-macOS.plist",
+        ]
+
+        for path in entitlementPaths {
+            let entitlement = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+            XCTAssertTrue(entitlement.contains("com.apple.security.application-groups"), "\(path) missing App Group entitlement")
+            XCTAssertTrue(entitlement.contains("group.org.aurora-protocol.aurora.shared"), "\(path) missing shared App Group")
+            XCTAssertTrue(entitlement.contains("keychain-access-groups"), "\(path) missing shared keychain access groups")
+            XCTAssertTrue(entitlement.contains("$(AppIdentifierPrefix)org.aurora-protocol.aurora.shared"), "\(path) missing shared keychain group")
+        }
+
+        for path in infoPaths {
+            let info = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+            XCTAssertTrue(info.contains("AuroraAppGroupIdentifier"), "\(path) missing App Group runtime key")
+            XCTAssertTrue(info.contains("group.org.aurora-protocol.aurora.shared"), "\(path) missing App Group runtime value")
+            XCTAssertTrue(info.contains("AuroraKeychainAccessGroup"), "\(path) missing keychain runtime key")
+            XCTAssertTrue(info.contains("$(AppIdentifierPrefix)org.aurora-protocol.aurora.shared"), "\(path) missing keychain runtime value")
+        }
+    }
+
     func testIOSAppDeclaresCompleteOrientationSet() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)

@@ -16,6 +16,28 @@ public enum AuroraSecureCredentialStoreError: Error, Equatable, Sendable {
     case unexpectedData
 }
 
+public enum AuroraAppleSharedContainer {
+    public static let appGroupIdentifierInfoKey = "AuroraAppGroupIdentifier"
+    public static let keychainAccessGroupInfoKey = "AuroraKeychainAccessGroup"
+    public static let defaultAppGroupIdentifier = "group.org.aurora-protocol.aurora.shared"
+
+    public static func appGroupIdentifier(bundle: Bundle = .main) -> String {
+        configuredString(for: appGroupIdentifierInfoKey, in: bundle) ?? defaultAppGroupIdentifier
+    }
+
+    public static func keychainAccessGroup(bundle: Bundle = .main) -> String? {
+        configuredString(for: keychainAccessGroupInfoKey, in: bundle)
+    }
+
+    private static func configuredString(for key: String, in bundle: Bundle) -> String? {
+        guard let value = bundle.object(forInfoDictionaryKey: key) as? String else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 public struct AuroraTokenWalletEntry: Codable, Equatable, Sendable {
     public var relayBucketID: String
     public var accessHintCredential: Data
@@ -111,9 +133,9 @@ public actor AuroraTokenWallet {
 
 #if canImport(Security)
 public struct AuroraKeychainCredentialStore: AuroraSecureCredentialStore, @unchecked Sendable {
-    private let accessGroup: String?
+    public let accessGroup: String?
 
-    public init(accessGroup: String? = nil) {
+    public init(accessGroup: String? = AuroraAppleSharedContainer.keychainAccessGroup()) {
         self.accessGroup = accessGroup
     }
 
@@ -169,7 +191,11 @@ public struct AuroraKeychainCredentialStore: AuroraSecureCredentialStore, @unche
 }
 #else
 public struct AuroraKeychainCredentialStore: AuroraSecureCredentialStore, Sendable {
-    public init(accessGroup: String? = nil) {}
+    public let accessGroup: String?
+
+    public init(accessGroup: String? = AuroraAppleSharedContainer.keychainAccessGroup()) {
+        self.accessGroup = accessGroup
+    }
 
     public func save(_ data: Data, service: String, account: String) async throws {
         throw AuroraSecureCredentialStoreError.unsupportedPlatform

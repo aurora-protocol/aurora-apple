@@ -20,6 +20,10 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>AuroraAppGroupIdentifier</key>
+	<string>group.org.aurora-protocol.aurora.shared</string>
+	<key>AuroraKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)org.aurora-protocol.aurora.shared</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>
