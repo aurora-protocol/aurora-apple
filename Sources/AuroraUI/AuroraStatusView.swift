@@ -5,6 +5,7 @@ public struct AuroraStatusView: View {
     @ObservedObject private var controller: AuroraClientController
     @State private var endpointText: String
     @State private var profileText: String
+    @State private var didLoadStoredProfile = false
 
     public init(controller: AuroraClientController) {
         self.controller = controller
@@ -114,6 +115,9 @@ public struct AuroraStatusView: View {
                 }
             }
             .navigationTitle("Aurora")
+            .task {
+                loadStoredProfileIfNeeded()
+            }
         }
     }
 
@@ -202,6 +206,18 @@ public struct AuroraStatusView: View {
             return "\(packetCount) packet"
         case .unavailable(let reason):
             return reason
+        }
+    }
+
+    @MainActor
+    private func loadStoredProfileIfNeeded() {
+        guard !didLoadStoredProfile else {
+            return
+        }
+        didLoadStoredProfile = true
+        if controller.loadStoredPortableProfile() {
+            endpointText = controller.configuration.endpoint.absoluteString
+            profileText = controller.exportPortableProfile()
         }
     }
 }

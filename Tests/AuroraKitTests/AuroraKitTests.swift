@@ -217,6 +217,129 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(diagnostic.contains("profile_import=ready"))
     }
 
+    func testControllerPersistsImportedPortableProfileAsSanitizedSharedProfile() async throws {
+        let store = MockPortableProfileStore()
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            profileStore: store
+        )
+
+        let imported = await controller.importPortableProfile("""
+        [aurora]
+        version = "2.0"
+        profile = "adversarial-dpi"
+        route = "split-2"
+        speed = "balanced"
+
+        [local]
+        mode = "platform-vpn"
+        dns = "through-aurora"
+
+        [methods]
+        allow_h2 = true
+        allow_h1_ws = true
+        allow_h3_ext_dgram = false
+        allow_masque = false
+
+        [security]
+        require_pq = true
+        require_split2_for_adversarial = true
+        allow_lab_tokens = false
+
+        [storage]
+        replay_cache = "sqlite"
+
+        [x.aurora.apple]
+        endpoint = "https://relay.example:9443"
+        admission_proof = "secret-proof"
+        token_authenticator = "secret-token"
+        hint_secret = "secret-hint"
+
+        [x.aurora.lab]
+        replay_nonce = "secret-replay"
+        bridge_bundle = "secret-bridge"
+        relay_descriptor = "secret-relay"
+        """)
+
+        let savedProfile = try XCTUnwrap(store.savedProfileText)
+        let reparsed = try AuroraPortableProfile.parse(savedProfile)
+        XCTAssertTrue(imported)
+        XCTAssertEqual(reparsed.endpoint?.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(reparsed.profile, "adversarial-dpi")
+        XCTAssertTrue(savedProfile.contains("[aurora]"))
+        XCTAssertTrue(savedProfile.contains("[x.aurora.apple]"))
+        XCTAssertFalse(savedProfile.contains("secret-proof"))
+        XCTAssertFalse(savedProfile.contains("secret-token"))
+        XCTAssertFalse(savedProfile.contains("secret-hint"))
+        XCTAssertFalse(savedProfile.contains("secret-replay"))
+        XCTAssertFalse(savedProfile.contains("secret-bridge"))
+        XCTAssertFalse(savedProfile.contains("secret-relay"))
+        XCTAssertFalse(savedProfile.contains("admission_proof"))
+        XCTAssertFalse(savedProfile.contains("token_authenticator"))
+        XCTAssertFalse(savedProfile.contains("hint_secret"))
+    }
+
+    func testControllerLoadsStoredPortableProfileAndMigratesSanitizedProfile() async throws {
+        let store = MockPortableProfileStore(initialProfileText: """
+        [aurora]
+        version = "2.0"
+        profile = "adversarial-dpi"
+        route = "split-2"
+        speed = "balanced"
+
+        [local]
+        mode = "platform-vpn"
+        dns = "through-aurora"
+
+        [methods]
+        allow_h2 = true
+        allow_h1_ws = true
+        allow_h3_ext_dgram = false
+        allow_masque = false
+
+        [security]
+        require_pq = true
+        require_split2_for_adversarial = true
+        allow_lab_tokens = false
+
+        [storage]
+        replay_cache = "sqlite"
+
+        [x.aurora.apple]
+        endpoint = "https://relay.example:9443"
+        admission_proof = "secret-proof"
+        token_authenticator = "secret-token"
+        hint_secret = "secret-hint"
+
+        [x.aurora.lab]
+        replay_nonce = "secret-replay"
+        bridge_bundle = "secret-bridge"
+        relay_descriptor = "secret-relay"
+        """)
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            profileStore: store
+        )
+
+        let loaded = await controller.loadStoredPortableProfile()
+        let configuration = await controller.configuration
+        let state = await controller.state
+        let migratedProfile = try XCTUnwrap(store.savedProfileText)
+
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(configuration.endpoint.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(configuration.routePolicy, "adversarial-dpi")
+        XCTAssertEqual(state, .idle)
+        XCTAssertFalse(migratedProfile.contains("secret-proof"))
+        XCTAssertFalse(migratedProfile.contains("secret-token"))
+        XCTAssertFalse(migratedProfile.contains("secret-hint"))
+        XCTAssertFalse(migratedProfile.contains("secret-replay"))
+        XCTAssertFalse(migratedProfile.contains("secret-bridge"))
+        XCTAssertFalse(migratedProfile.contains("secret-relay"))
+    }
+
     func testControllerRejectsInvalidPortableProfileWithoutChangingConfiguration() async {
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
@@ -592,6 +715,59 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(reparsed.profile, "adversarial-dpi")
         XCTAssertEqual(reparsed.route, "split-2")
         XCTAssertEqual(reparsed.localMode, "platform-vpn")
+    }
+
+    func testUserDefaultsProfileStoreSanitizesBeforeSaving() throws {
+        let suiteName = "org.aurora-protocol.aurora.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        let store = AuroraUserDefaultsProfileStore(
+            appGroupIdentifier: suiteName,
+            defaults: defaults
+        )
+
+        try store.savePortableProfile("""
+        [aurora]
+        version = "2.0"
+        profile = "adversarial-dpi"
+        route = "split-2"
+        speed = "balanced"
+
+        [local]
+        mode = "platform-vpn"
+        dns = "through-aurora"
+
+        [methods]
+        allow_h2 = true
+        allow_h1_ws = true
+        allow_h3_ext_dgram = false
+        allow_masque = false
+
+        [security]
+        require_pq = true
+        require_split2_for_adversarial = true
+        allow_lab_tokens = false
+
+        [storage]
+        replay_cache = "sqlite"
+
+        [x.aurora.apple]
+        endpoint = "https://relay.example:9443"
+        admission_proof = "secret-proof"
+        token_authenticator = "secret-token"
+        hint_secret = "secret-hint"
+        """)
+
+        let saved = try XCTUnwrap(try store.loadPortableProfile())
+        XCTAssertTrue(saved.contains("[x.aurora.apple]"))
+        XCTAssertFalse(saved.contains("secret-proof"))
+        XCTAssertFalse(saved.contains("secret-token"))
+        XCTAssertFalse(saved.contains("secret-hint"))
+        XCTAssertFalse(saved.contains("admission_proof"))
+        XCTAssertFalse(saved.contains("token_authenticator"))
+        XCTAssertFalse(saved.contains("hint_secret"))
     }
 
     func testPortableProfileRejectsUnknownSecurityKeys() {
@@ -1041,6 +1217,22 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(view.contains("Export Profile"), "status view missing export action")
         XCTAssertTrue(view.contains("importPortableProfile"), "status view does not call controller profile import")
         XCTAssertTrue(view.contains("exportPortableProfile"), "status view does not call controller profile export")
+        XCTAssertTrue(view.contains("loadStoredPortableProfile"), "status view does not load stored portable profiles")
+    }
+
+    func testAppsConstructControllersWithSharedAppGroupProfileStore() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let appPaths = [
+            "Apps/iOS/AuroraIOSApp.swift",
+            "Apps/macOS/AuroraMacApp.swift",
+        ]
+
+        for path in appPaths {
+            let app = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+            XCTAssertTrue(app.contains("profileStore:"), "\(path) missing profile store injection")
+            XCTAssertTrue(app.contains("AuroraUserDefaultsProfileStore"), "\(path) missing shared profile store")
+            XCTAssertTrue(app.contains("AuroraAppleSharedContainer.appGroupIdentifier()"), "\(path) missing App Group profile store scope")
+        }
     }
 
     func testIOSAppDeclaresCompleteOrientationSet() throws {
@@ -1057,6 +1249,33 @@ final class AuroraKitTests: XCTestCase {
             XCTAssertTrue(project.contains(orientation), "project.yml missing \(orientation)")
             XCTAssertTrue(info.contains(orientation), "iOS Info.plist missing \(orientation)")
         }
+    }
+}
+
+private final class MockPortableProfileStore: AuroraPortableProfileStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var profileText: String?
+
+    init(initialProfileText: String? = nil) {
+        profileText = initialProfileText
+    }
+
+    var savedProfileText: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return profileText
+    }
+
+    func loadPortableProfile() throws -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return profileText
+    }
+
+    func savePortableProfile(_ profileText: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        self.profileText = profileText
     }
 }
 

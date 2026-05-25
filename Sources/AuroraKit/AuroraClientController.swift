@@ -33,6 +33,7 @@ public final class AuroraClientController: ObservableObject {
 
     public var configuration: AuroraConfiguration
     private let serverClient: any AuroraServerClient
+    private let profileStore: (any AuroraPortableProfileStore)?
     private let packetClient: any AuroraPacketExchangeClient
     private let issuerClient: any AuroraIssuerClient
     private let tokenWallet: AuroraTokenWallet
@@ -42,6 +43,7 @@ public final class AuroraClientController: ObservableObject {
     public init(
         configuration: AuroraConfiguration,
         serverClient: any AuroraServerClient = URLSessionAuroraServerClient(),
+        profileStore: (any AuroraPortableProfileStore)? = nil,
         packetClient: any AuroraPacketExchangeClient = URLSessionAuroraServerClient(),
         issuerClient: any AuroraIssuerClient = URLSessionAuroraServerClient(),
         tokenWallet: AuroraTokenWallet = AuroraTokenWallet(),
@@ -49,6 +51,7 @@ public final class AuroraClientController: ObservableObject {
     ) {
         self.configuration = configuration
         self.serverClient = serverClient
+        self.profileStore = profileStore
         self.packetClient = packetClient
         self.issuerClient = issuerClient
         self.tokenWallet = tokenWallet
@@ -71,19 +74,23 @@ public final class AuroraClientController: ObservableObject {
 
     @discardableResult
     public func importPortableProfile(_ profileText: String) -> Bool {
+        applyPortableProfile(profileText, persist: true)
+    }
+
+    @discardableResult
+    public func loadStoredPortableProfile() -> Bool {
+        guard let profileStore else {
+            return false
+        }
         do {
-            let profile = try AuroraPortableProfile.parse(profileText)
-            configuration = profile.configuration(defaultEndpoint: configuration.endpoint)
-            resetServerDerivedState()
-            state = .idle
-            redactedDiagnosticLine = AuroraRedactor.redact(
-                "endpoint=\(configuration.endpoint.absoluteString) profile_import=ready route_policy=\(configuration.routePolicy)"
-            )
-            return true
+            guard let profileText = try profileStore.loadPortableProfile() else {
+                return false
+            }
+            return applyPortableProfile(profileText, persist: true)
         } catch {
-            state = .unavailable("invalid profile")
+            state = .unavailable("profile storage unavailable")
             resetServerDerivedState()
-            redactedDiagnosticLine = AuroraRedactor.redact("profile_import_error=\(error)")
+            redactedDiagnosticLine = AuroraRedactor.redact("profile_store_error=\(error)")
             return false
         }
     }
@@ -251,6 +258,38 @@ public final class AuroraClientController: ObservableObject {
         packetExchangeState = .idle
         lastIssuedToken = nil
         credentialState = .idle
+    }
+
+    private func applyPortableProfile(_ profileText: String, persist: Bool) -> Bool {
+        let profile: AuroraPortableProfile
+        do {
+            profile = try AuroraPortableProfile.parse(profileText)
+        } catch {
+            state = .unavailable("invalid profile")
+            resetServerDerivedState()
+            redactedDiagnosticLine = AuroraRedactor.redact("profile_import_error=\(error)")
+            return false
+        }
+
+        let nextConfiguration = profile.configuration(defaultEndpoint: configuration.endpoint)
+        if persist {
+            do {
+                try profileStore?.savePortableProfile(profile.tomlString())
+            } catch {
+                state = .unavailable("profile storage unavailable")
+                resetServerDerivedState()
+                redactedDiagnosticLine = AuroraRedactor.redact("profile_store_error=\(error)")
+                return false
+            }
+        }
+
+        configuration = nextConfiguration
+        resetServerDerivedState()
+        state = .idle
+        redactedDiagnosticLine = AuroraRedactor.redact(
+            "endpoint=\(configuration.endpoint.absoluteString) profile_import=ready route_policy=\(configuration.routePolicy)"
+        )
+        return true
     }
 }
 
