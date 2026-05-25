@@ -152,6 +152,17 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(state, .idle)
     }
 
+    func testEndpointValidationRejectsRemotePlainHTTPButAllowsLoopback() {
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "http://relay.example:9443"))
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "http://203.0.113.7:9443"))
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "http://127.example.com:9443"))
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "http://127.0.0.1.example:9443"))
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "http://127.256.0.1:9443"))
+        XCTAssertNotNil(AuroraConfiguration.validatedEndpoint(from: "http://127.0.0.1:9443"))
+        XCTAssertNotNil(AuroraConfiguration.validatedEndpoint(from: "http://[::1]:9443"))
+        XCTAssertNotNil(AuroraConfiguration.validatedEndpoint(from: "https://relay.example:9443"))
+    }
+
     func testControllerRejectsInvalidEndpointInput() async {
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),

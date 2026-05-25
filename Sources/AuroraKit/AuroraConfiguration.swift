@@ -14,11 +14,29 @@ public struct AuroraConfiguration: Equatable, Sendable {
         guard let url = URL(string: trimmed),
               let scheme = url.scheme?.lowercased(),
               (scheme == "http" || scheme == "https"),
-              url.host != nil
+              let host = url.host,
+              scheme == "https" || Self.isLoopbackHost(host)
         else {
             return nil
         }
         return url
+    }
+
+    private static func isLoopbackHost(_ host: String) -> Bool {
+        let normalized = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+        return normalized == "localhost" || normalized == "::1" || Self.isIPv4LoopbackHost(normalized)
+    }
+
+    private static func isIPv4LoopbackHost(_ host: String) -> Bool {
+        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard octets.count == 4, octets.first == "127" else {
+            return false
+        }
+        return octets.allSatisfy { octet in
+            !octet.isEmpty
+                && octet.allSatisfy(\.isNumber)
+                && Int(octet).map { (0...255).contains($0) } == true
+        }
     }
 }
 
