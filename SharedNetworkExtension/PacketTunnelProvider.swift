@@ -1,31 +1,83 @@
 import AuroraKit
 import Foundation
+import Network
 import NetworkExtension
 
-final class PacketTunnelProvider: NEPacketTunnelProvider {
+final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let fallbackConfiguration = AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!)
     private let serverClient = URLSessionAuroraServerClient()
+    private let pathObserver = NetworkPathObserver()
+    private var runtime: AuroraPacketTunnelRuntime?
+    private var runtimeTask: Task<Void, Never>?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let completion = StartTunnelCompletion(completionHandler)
-        let tunnelConfiguration = AuroraPacketTunnelConfiguration(configuration: resolvedConfiguration())
-        let endpoint = tunnelConfiguration.endpoint
+        let configuration = resolvedConfiguration()
+        let tunnelConfiguration = AuroraPacketTunnelConfiguration(configuration: configuration)
         let serverClient = serverClient
+        let packetFlow = NetworkExtensionPacketFlow(packetFlow: packetFlow)
+        let pathObserver = pathObserver
 
         setTunnelNetworkSettings(networkSettings(for: tunnelConfiguration)) { error in
             if let error {
                 completion(error)
                 return
             }
-            completion(nil)
-            Task {
-                _ = try? await serverClient.fetchStatus(endpoint: endpoint)
+            let runtime = AuroraPacketTunnelRuntime(
+                configuration: configuration,
+                packetFlow: packetFlow,
+                core: AuroraServerBackedPacketTunnelCore(serverClient: serverClient)
+            )
+            self.runtime = runtime
+            self.runtimeTask = Task {
+                do {
+                    try await runtime.start()
+                    pathObserver.start { change in
+                        Task {
+                            await runtime.notifyNetworkPathChange(change)
+                        }
+                    }
+                    await runtime.notifyNetworkPathChange(pathObserver.currentChange())
+                    completion(nil)
+                    await runtime.runUntilStopped()
+                } catch {
+                    pathObserver.stop()
+                    completion(error)
+                }
             }
         }
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
-        completionHandler()
+        let completion = StopTunnelCompletion(completionHandler)
+        let runtime = runtime
+        pathObserver.stop()
+        runtimeTask?.cancel()
+        runtimeTask = nil
+        self.runtime = nil
+        Task {
+            await runtime?.stop()
+            completion()
+        }
+    }
+
+    override func sleep(completionHandler: @escaping () -> Void) {
+        let completion = StopTunnelCompletion(completionHandler)
+        let runtime = runtime
+        Task {
+            await runtime?.notifyNetworkPathChange(
+                AuroraNetworkPathChange(interface: "sleep", expensive: false, constrained: false)
+            )
+            completion()
+        }
+    }
+
+    override func wake() {
+        let runtime = runtime
+        let pathObserver = pathObserver
+        Task {
+            await runtime?.notifyNetworkPathChange(pathObserver.currentChange())
+        }
     }
 
     private func resolvedConfiguration() -> AuroraConfiguration {
@@ -58,6 +110,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
         return settings
     }
+
 }
 
 private final class StartTunnelCompletion: @unchecked Sendable {
@@ -69,5 +122,106 @@ private final class StartTunnelCompletion: @unchecked Sendable {
 
     func callAsFunction(_ error: Error?) {
         handler(error)
+    }
+}
+
+private final class StopTunnelCompletion: @unchecked Sendable {
+    private let handler: () -> Void
+
+    init(_ handler: @escaping () -> Void) {
+        self.handler = handler
+    }
+
+    func callAsFunction() {
+        handler()
+    }
+}
+
+private final class NetworkPathObserver: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "org.aurora.packet-tunnel.path")
+    private let lock = NSLock()
+    private var monitor: NWPathMonitor?
+
+    func start(_ handler: @escaping @Sendable (AuroraNetworkPathChange) -> Void) {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { path in
+            handler(Self.change(for: path))
+        }
+        lock.lock()
+        self.monitor?.cancel()
+        self.monitor = monitor
+        lock.unlock()
+        monitor.start(queue: queue)
+    }
+
+    func stop() {
+        lock.lock()
+        let monitor = monitor
+        self.monitor = nil
+        lock.unlock()
+        monitor?.cancel()
+    }
+
+    func currentChange() -> AuroraNetworkPathChange {
+        lock.lock()
+        let path = monitor?.currentPath
+        lock.unlock()
+        guard let path else {
+            return AuroraNetworkPathChange(interface: "unknown", expensive: false, constrained: false)
+        }
+        return Self.change(for: path)
+    }
+
+    private static func change(for path: NWPath) -> AuroraNetworkPathChange {
+        AuroraNetworkPathChange(
+            interface: interfaceName(for: path),
+            expensive: path.isExpensive,
+            constrained: path.isConstrained
+        )
+    }
+
+    private static func interfaceName(for path: NWPath) -> String {
+        if path.usesInterfaceType(.wifi) {
+            return "wifi"
+        }
+        if path.usesInterfaceType(.cellular) {
+            return "cellular"
+        }
+        if path.usesInterfaceType(.wiredEthernet) {
+            return "wired"
+        }
+        if path.usesInterfaceType(.loopback) {
+            return "loopback"
+        }
+        if path.usesInterfaceType(.other) {
+            return "other"
+        }
+        return "unknown"
+    }
+}
+
+private final class NetworkExtensionPacketFlow: AuroraPacketFlow, @unchecked Sendable {
+    private let packetFlow: NEPacketTunnelFlow
+
+    init(packetFlow: NEPacketTunnelFlow) {
+        self.packetFlow = packetFlow
+    }
+
+    func readPacketBatch() async -> AuroraPacketFlowBatch? {
+        await withCheckedContinuation { continuation in
+            packetFlow.readPackets { packets, protocols in
+                continuation.resume(
+                    returning: AuroraPacketFlowBatch(
+                        packets: packets,
+                        protocolNumbers: protocols.map(\.intValue)
+                    )
+                )
+            }
+        }
+    }
+
+    func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool {
+        let protocols = batch.protocolNumbers.map { NSNumber(value: $0) }
+        return packetFlow.writePackets(batch.packets, withProtocols: protocols)
     }
 }

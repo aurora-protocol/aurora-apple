@@ -121,6 +121,66 @@ final class AuroraKitTests: XCTestCase {
         ]))
     }
 
+    func testPacketTunnelRuntimeConnectsAndPumpsPacketBatch() async throws {
+        let packetFlow = MockPacketFlow(
+            batches: [
+                AuroraPacketFlowBatch(
+                    packets: [Data([0x45, 0x00, 0x00, 0x14])],
+                    protocolNumbers: [2]
+                ),
+            ]
+        )
+        let core = MockPacketTunnelCore(outboundPackets: [
+            AuroraPacketFlowBatch(
+                packets: [Data([0x45, 0x00, 0x00, 0x15])],
+                protocolNumbers: [2]
+            ),
+        ])
+        let configuration = AuroraConfiguration(
+            endpoint: URL(string: "https://relay.example:9443")!,
+            routePolicy: "balanced"
+        )
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: configuration,
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        let processed = try await runtime.processNextBatch()
+
+        let connectedEndpoint = await core.connectedEndpoint
+        let ingestedPackets = await core.ingestedPackets
+        let writtenBatches = await packetFlow.writtenBatches
+        XCTAssertTrue(processed)
+        XCTAssertEqual(connectedEndpoint, "https://relay.example:9443")
+        XCTAssertEqual(ingestedPackets, [Data([0x45, 0x00, 0x00, 0x14])])
+        XCTAssertEqual(writtenBatches.map(\.packets), [[Data([0x45, 0x00, 0x00, 0x15])]])
+        XCTAssertEqual(writtenBatches.map(\.protocolNumbers), [[2]])
+    }
+
+    func testPacketTunnelRuntimeForwardsNetworkPathChangesAndClose() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockPacketTunnelCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        await runtime.notifyNetworkPathChange(
+            AuroraNetworkPathChange(interface: "wifi", expensive: false, constrained: false)
+        )
+        await runtime.stop()
+
+        let pathChanges = await core.pathChanges
+        let closed = await core.closed
+        XCTAssertEqual(pathChanges, [
+            AuroraNetworkPathChange(interface: "wifi", expensive: false, constrained: false),
+        ])
+        XCTAssertTrue(closed)
+    }
+
     func testControllerInstallsAndStartsTunnelThroughInjectedManager() async {
         let tunnelManager = MockTunnelManager()
         let endpoint = URL(string: "https://relay.example:9443")!
@@ -211,5 +271,58 @@ private actor MockTunnelManager: AuroraTunnelManager {
 
     func status() async -> AuroraTunnelConnectionStatus {
         .disconnected
+    }
+}
+
+private actor MockPacketFlow: AuroraPacketFlow {
+    private var batches: [AuroraPacketFlowBatch]
+    private(set) var writtenBatches: [AuroraPacketFlowBatch] = []
+
+    init(batches: [AuroraPacketFlowBatch]) {
+        self.batches = batches
+    }
+
+    func readPacketBatch() async -> AuroraPacketFlowBatch? {
+        guard !batches.isEmpty else {
+            return nil
+        }
+        return batches.removeFirst()
+    }
+
+    func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool {
+        writtenBatches.append(batch)
+        return true
+    }
+}
+
+private actor MockPacketTunnelCore: AuroraPacketTunnelCore {
+    private var outboundPackets: [AuroraPacketFlowBatch]
+    private(set) var connectedEndpoint: String?
+    private(set) var ingestedPackets: [Data] = []
+    private(set) var pathChanges: [AuroraNetworkPathChange] = []
+    private(set) var closed = false
+
+    init(outboundPackets: [AuroraPacketFlowBatch] = []) {
+        self.outboundPackets = outboundPackets
+    }
+
+    func connect(configuration: AuroraConfiguration) async throws {
+        connectedEndpoint = configuration.endpoint.absoluteString
+    }
+
+    func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        ingestedPackets.append(contentsOf: batch.packets)
+        guard !outboundPackets.isEmpty else {
+            return AuroraPacketFlowBatch(packets: [], protocolNumbers: [])
+        }
+        return outboundPackets.removeFirst()
+    }
+
+    func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {
+        pathChanges.append(change)
+    }
+
+    func close() async {
+        closed = true
     }
 }
