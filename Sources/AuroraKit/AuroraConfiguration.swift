@@ -314,7 +314,11 @@ public struct AuroraServerStatus: Codable, Equatable, Sendable {
         self.cover = cover
     }
 
+    public var clientReady: Bool {
+        ready && issuer && cover
+    }
+
     public var summary: String {
-        ready ? "ready" : "unavailable"
+        clientReady ? "ready" : "unavailable"
     }
 }

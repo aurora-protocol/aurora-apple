@@ -125,6 +125,18 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(state, .ready)
     }
 
+    func testControllerRequiresFullServerSurfaceBeforeReady() async {
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: false))
+        )
+
+        await controller.refreshStatus()
+
+        let state = await controller.state
+        XCTAssertEqual(state, .unavailable("server unavailable"))
+    }
+
     func testControllerUpdatesEndpointFromValidatedUserInput() async {
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
@@ -998,6 +1010,28 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(requestedBatch, inbound)
     }
 
+    func testServerBackedPacketTunnelCoreRequiresFullServerSurface() async throws {
+        let statusClient = MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: false))
+        let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x15])],
+            protocolNumbers: [2]
+        ))
+        let core = AuroraServerBackedPacketTunnelCore(
+            statusClient: statusClient,
+            packetClient: packetClient
+        )
+
+        do {
+            try await core.connect(configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!))
+            XCTFail("connect should fail without full server surface")
+        } catch {
+            XCTAssertEqual(error as? AuroraClientError, .unavailable)
+        }
+
+        let packetEndpoint = await packetClient.requestedEndpoint
+        XCTAssertNil(packetEndpoint)
+    }
+
     func testServerBackedPacketTunnelCoreIssuesAdmissionTokenBeforePacketExchange() async throws {
         let statusClient = MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
         let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
@@ -1088,6 +1122,32 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(request?.url?.path, "/assets/app.bin")
         XCTAssertEqual(request?.value(forHTTPHeaderField: "Content-Type"), "application/octet-stream")
         XCTAssertEqual(body, try AuroraPacketBatchCodec.encode(inbound))
+        XCTAssertEqual(exchanged, outbound)
+    }
+
+    func testURLSessionServerClientAcceptsPacketContentTypeParameters() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PacketExchangeURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = URLSessionAuroraServerClient(session: session)
+        let inbound = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        )
+        let outbound = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x15])],
+            protocolNumbers: [2]
+        )
+        PacketExchangeURLProtocol.setResponse(
+            try AuroraPacketBatchCodec.encode(outbound),
+            contentType: "application/octet-stream; charset=binary"
+        )
+
+        let exchanged = try await client.exchangePacketBatch(
+            endpoint: URL(string: "https://relay.example:9443")!,
+            batch: inbound
+        )
+
         XCTAssertEqual(exchanged, outbound)
     }
 
@@ -1580,23 +1640,25 @@ private final class PacketExchangeURLProtocol: URLProtocol, @unchecked Sendable 
     private final class State: @unchecked Sendable {
         private let lock = NSLock()
         var response = Data()
+        var contentType = "application/octet-stream"
         var lastRequest: URLRequest?
         var lastBody: Data?
 
-        func setResponse(_ data: Data) {
+        func setResponse(_ data: Data, contentType: String) {
             lock.lock()
             defer { lock.unlock() }
             response = data
+            self.contentType = contentType
             lastRequest = nil
             lastBody = nil
         }
 
-        func record(request: URLRequest, body: Data?) -> Data {
+        func record(request: URLRequest, body: Data?) -> (body: Data, contentType: String) {
             lock.lock()
             defer { lock.unlock() }
             lastRequest = request
             lastBody = body
-            return response
+            return (response, contentType)
         }
 
         func request() -> URLRequest? {
@@ -1622,8 +1684,8 @@ private final class PacketExchangeURLProtocol: URLProtocol, @unchecked Sendable 
         state.body()
     }
 
-    static func setResponse(_ data: Data) {
-        state.setResponse(data)
+    static func setResponse(_ data: Data, contentType: String = "application/octet-stream") {
+        state.setResponse(data, contentType: contentType)
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -1636,15 +1698,15 @@ private final class PacketExchangeURLProtocol: URLProtocol, @unchecked Sendable 
 
     override func startLoading() {
         let body = request.httpBody ?? Self.readBodyStream(request.httpBodyStream)
-        let responseBody = Self.state.record(request: request, body: body)
+        let configured = Self.state.record(request: request, body: body)
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: 200,
             httpVersion: nil,
-            headerFields: ["Content-Type": "application/octet-stream"]
+            headerFields: ["Content-Type": configured.contentType]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: responseBody)
+        client?.urlProtocol(self, didLoad: configured.body)
         client?.urlProtocolDidFinishLoading(self)
     }
 

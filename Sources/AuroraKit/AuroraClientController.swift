@@ -108,9 +108,9 @@ public final class AuroraClientController: ObservableObject {
         do {
             let status = try await serverClient.fetchStatus(endpoint: configuration.endpoint)
             lastStatus = status
-            state = status.ready ? .ready : .unavailable("server unavailable")
+            state = status.clientReady ? .ready : .unavailable("server unavailable")
             redactedDiagnosticLine = AuroraRedactor.redact(
-                "endpoint=\(configuration.endpoint.absoluteString) ready=\(status.ready)"
+                "endpoint=\(configuration.endpoint.absoluteString) ready=\(status.ready) issuer=\(status.issuer) cover=\(status.cover)"
             )
         } catch {
             state = .unavailable("server unavailable")

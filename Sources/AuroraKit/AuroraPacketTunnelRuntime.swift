@@ -258,7 +258,7 @@ public actor AuroraServerBackedPacketTunnelCore: AuroraPacketTunnelCore {
 
     public func connect(configuration: AuroraConfiguration) async throws {
         let status = try await statusClient.fetchStatus(endpoint: configuration.endpoint)
-        guard status.ready, status.issuer else {
+        guard status.clientReady else {
             throw AuroraClientError.unavailable
         }
         try await issueAdmissionTokenIfConfigured(endpoint: configuration.endpoint)

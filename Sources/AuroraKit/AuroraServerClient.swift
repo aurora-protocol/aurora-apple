@@ -32,11 +32,23 @@ public struct URLSessionAuroraServerClient: AuroraServerClient, AuroraPacketExch
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse,
               http.statusCode == 200,
-              http.value(forHTTPHeaderField: "Content-Type") == "application/octet-stream"
+              Self.isPacketExchangeContentType(http.value(forHTTPHeaderField: "Content-Type"))
         else {
             throw AuroraClientError.unavailable
         }
         return try AuroraPacketBatchCodec.decode(data)
+    }
+
+    private static func isPacketExchangeContentType(_ raw: String?) -> Bool {
+        guard let raw else {
+            return false
+        }
+        let mediaType = raw
+            .split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return mediaType == "application/octet-stream"
     }
 }
 
