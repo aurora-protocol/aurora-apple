@@ -72,11 +72,17 @@ targets:
     entitlements:
       path: Apps/iOS/AuroraIOS.entitlements
       properties:
+        com.apple.security.application-groups:
+          - group.org.aurora-protocol.aurora.shared
         com.apple.developer.networking.networkextension:
           - packet-tunnel-provider
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)org.aurora-protocol.aurora.shared
     info:
       path: Apps/iOS/Info.plist
       properties:
+        AuroraAppGroupIdentifier: group.org.aurora-protocol.aurora.shared
+        AuroraKeychainAccessGroup: $(AppIdentifierPrefix)org.aurora-protocol.aurora.shared
         CFBundleDisplayName: Aurora
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
@@ -101,11 +107,17 @@ targets:
     entitlements:
       path: SharedNetworkExtension/AuroraPacketTunnel-iOS.entitlements
       properties:
+        com.apple.security.application-groups:
+          - group.org.aurora-protocol.aurora.shared
         com.apple.developer.networking.networkextension:
           - packet-tunnel-provider
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)org.aurora-protocol.aurora.shared
     info:
       path: SharedNetworkExtension/Info-iOS.plist
       properties:
+        AuroraAppGroupIdentifier: group.org.aurora-protocol.aurora.shared
+        AuroraKeychainAccessGroup: $(AppIdentifierPrefix)org.aurora-protocol.aurora.shared
         CFBundleDisplayName: Aurora Packet Tunnel
         NSExtension:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
@@ -129,11 +141,17 @@ targets:
     entitlements:
       path: Apps/macOS/AuroraMac.entitlements
       properties:
+        com.apple.security.application-groups:
+          - group.org.aurora-protocol.aurora.shared
         com.apple.developer.networking.networkextension:
           - packet-tunnel-provider
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)org.aurora-protocol.aurora.shared
     info:
       path: Apps/macOS/Info.plist
       properties:
+        AuroraAppGroupIdentifier: group.org.aurora-protocol.aurora.shared
+        AuroraKeychainAccessGroup: $(AppIdentifierPrefix)org.aurora-protocol.aurora.shared
         CFBundleDisplayName: Aurora
         LSApplicationCategoryType: public.app-category.utilities
     settings:
@@ -152,11 +170,17 @@ targets:
     entitlements:
       path: SharedNetworkExtension/AuroraPacketTunnel-macOS.entitlements
       properties:
+        com.apple.security.application-groups:
+          - group.org.aurora-protocol.aurora.shared
         com.apple.developer.networking.networkextension:
           - packet-tunnel-provider
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)org.aurora-protocol.aurora.shared
     info:
       path: SharedNetworkExtension/Info-macOS.plist
       properties:
+        AuroraAppGroupIdentifier: group.org.aurora-protocol.aurora.shared
+        AuroraKeychainAccessGroup: $(AppIdentifierPrefix)org.aurora-protocol.aurora.shared
         CFBundleDisplayName: Aurora Packet Tunnel
         NSExtension:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel

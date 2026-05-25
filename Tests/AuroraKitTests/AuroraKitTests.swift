@@ -429,6 +429,80 @@ final class AuroraKitTests: XCTestCase {
         ]))
     }
 
+    func testPortableProfileParsesConfigFloorAndAppleEndpointExtension() throws {
+        let profile = try AuroraPortableProfile.parse("""
+        [aurora]
+        version = "2.0"
+        profile = "adversarial-dpi"
+        route = "split-2"
+        speed = "balanced"
+
+        [local]
+        mode = "platform-vpn"
+        dns = "through-aurora"
+
+        [methods]
+        allow_h2 = true
+        allow_h1_ws = true
+        allow_h3_ext_dgram = false
+        allow_masque = false
+
+        [security]
+        require_pq = true
+        require_split2_for_adversarial = true
+        allow_lab_tokens = false
+
+        [storage]
+        replay_cache = "sqlite"
+
+        [x.aurora.apple]
+        endpoint = "https://relay.example:9443"
+        """)
+
+        XCTAssertEqual(profile.version, "2.0")
+        XCTAssertEqual(profile.profile, "adversarial-dpi")
+        XCTAssertEqual(profile.route, "split-2")
+        XCTAssertEqual(profile.localMode, "platform-vpn")
+        XCTAssertEqual(profile.endpoint?.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(profile.configuration(defaultEndpoint: URL(string: "https://fallback.example")!).routePolicy, "adversarial-dpi")
+    }
+
+    func testPortableProfileExportRoundTripsAppleEndpointWithoutSecrets() throws {
+        let profile = AuroraPortableProfile(
+            configuration: AuroraConfiguration(
+                endpoint: URL(string: "https://relay.example:9443")!,
+                routePolicy: "adversarial-dpi"
+            ),
+            route: "split-2",
+            localMode: "platform-vpn"
+        )
+
+        let exported = profile.tomlString()
+        let reparsed = try AuroraPortableProfile.parse(exported)
+
+        XCTAssertTrue(exported.contains("[aurora]"))
+        XCTAssertTrue(exported.contains("[x.aurora.apple]"))
+        XCTAssertFalse(exported.contains("admission_proof"))
+        XCTAssertFalse(exported.contains("token_authenticator"))
+        XCTAssertFalse(exported.contains("hint_secret"))
+        XCTAssertEqual(reparsed.endpoint?.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(reparsed.profile, "adversarial-dpi")
+        XCTAssertEqual(reparsed.route, "split-2")
+        XCTAssertEqual(reparsed.localMode, "platform-vpn")
+    }
+
+    func testPortableProfileRejectsUnknownSecurityKeys() {
+        XCTAssertThrowsError(try AuroraPortableProfile.parse("""
+        [security]
+        allow_plaintext_tokens = "yes"
+
+        [x.aurora.apple]
+        endpoint = "https://relay.example:9443"
+        """)) { error in
+            XCTAssertEqual(error as? AuroraPortableProfileError, .unknownKey(section: "security", key: "allow_plaintext_tokens"))
+        }
+    }
+
     func testPacketTunnelRuntimeConnectsAndPumpsPacketBatch() async throws {
         let packetFlow = MockPacketFlow(
             batches: [
@@ -838,6 +912,18 @@ final class AuroraKitTests: XCTestCase {
             XCTAssertTrue(info.contains("AuroraKeychainAccessGroup"), "\(path) missing keychain runtime key")
             XCTAssertTrue(info.contains("$(AppIdentifierPrefix)org.aurora-protocol.aurora.shared"), "\(path) missing keychain runtime value")
         }
+    }
+
+    func testProjectGeneratorPreservesSharedStorageDeclarations() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
+
+        XCTAssertTrue(project.contains("com.apple.security.application-groups"), "project.yml missing App Group entitlement generation")
+        XCTAssertTrue(project.contains("group.org.aurora-protocol.aurora.shared"), "project.yml missing shared App Group generation")
+        XCTAssertTrue(project.contains("keychain-access-groups"), "project.yml missing keychain access group generation")
+        XCTAssertTrue(project.contains("$(AppIdentifierPrefix)org.aurora-protocol.aurora.shared"), "project.yml missing shared keychain access group generation")
+        XCTAssertTrue(project.contains("AuroraAppGroupIdentifier"), "project.yml missing App Group Info.plist generation")
+        XCTAssertTrue(project.contains("AuroraKeychainAccessGroup"), "project.yml missing keychain Info.plist generation")
     }
 
     func testIOSAppDeclaresCompleteOrientationSet() throws {
