@@ -153,6 +153,15 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(tunnel.tunnelRemoteAddress, "127.0.0.1")
     }
 
+    func testPacketTunnelConfigurationExcludesIPv4RelayFromDefaultRoute() throws {
+        let endpoint = URL(string: "https://203.0.113.7:9443")!
+        let tunnel = AuroraPacketTunnelConfiguration(configuration: AuroraConfiguration(endpoint: endpoint))
+
+        XCTAssertEqual(tunnel.excludedIPv4Routes, [
+            AuroraIPv4Route(destinationAddress: "203.0.113.7", subnetMask: "255.255.255.255"),
+        ])
+    }
+
     func testTunnelProfileBuildsProviderConfigurationPayload() throws {
         let endpoint = URL(string: "https://relay.example:9443")!
         let profile = AuroraTunnelProfile(

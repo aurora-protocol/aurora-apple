@@ -100,6 +100,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         if configuration.includeDefaultIPv4Route {
             ipv4.includedRoutes = [NEIPv4Route.default()]
         }
+        if !configuration.excludedIPv4Routes.isEmpty {
+            ipv4.excludedRoutes = configuration.excludedIPv4Routes.map {
+                NEIPv4Route(destinationAddress: $0.destinationAddress, subnetMask: $0.subnetMask)
+            }
+        }
         settings.ipv4Settings = ipv4
 
         let dns = NEDNSSettings(servers: configuration.dnsServers)
