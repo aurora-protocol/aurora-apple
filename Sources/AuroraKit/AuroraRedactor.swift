@@ -2,9 +2,15 @@ import Foundation
 
 public enum AuroraRedactor {
     private static let sensitiveKeys = [
+        "access_hint",
+        "access_hint_credential",
         "admission_proof",
         "binding_proof",
+        "bridge_bundle",
         "hint_secret",
+        "relay_descriptor",
+        "replay_nonce",
+        "replay_proof",
         "token_authenticator",
         "token_public_metadata",
     ]

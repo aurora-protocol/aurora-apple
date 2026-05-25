@@ -29,7 +29,9 @@
 		82BF269D64073CDEA6F3157D /* AuroraIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E655A1A7022F9A9D8B35243 /* AuroraIOSApp.swift */; };
 		89BB60E3B59F891FE3753B23 /* AuroraUI_macOS.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A535DB687DFDC5E17200527D /* AuroraUI_macOS.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		89D4765F78D3F4FBDAC074A7 /* AuroraPacketTunnel_macOS.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 942479B97E7B955AD816E7FF /* AuroraPacketTunnel_macOS.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		8F8420EA6160222A6EAE4254 /* AuroraTokenWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C571DE65AE541DF37702EB /* AuroraTokenWallet.swift */; };
 		906AAAB771CBB98386353322 /* AuroraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */; };
+		98B3B84ABBFB6E375D98D25F /* AuroraTokenWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C571DE65AE541DF37702EB /* AuroraTokenWallet.swift */; };
 		C5E59A21794A460372C7D8DD /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
 		CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */; };
 		CCA081E765150A4C5FEBFC75 /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
@@ -169,6 +171,7 @@
 		9D0D733810C55062FF37301F /* AuroraKit_macOS.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AuroraKit_macOS.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		A535DB687DFDC5E17200527D /* AuroraUI_macOS.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AuroraUI_macOS.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		B181F29A5770BB1A4A64286E /* AuroraMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AuroraMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B4C571DE65AE541DF37702EB /* AuroraTokenWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraTokenWallet.swift; sourceTree = "<group>"; };
 		D7372C48806EACF6199E67BA /* AuroraIOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AuroraIOS.entitlements; sourceTree = "<group>"; };
 		EC0E1EB4E6547496142467EE /* AuroraTunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraTunnelManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -245,6 +248,7 @@
 				771CB3DE75AB5028FB1A64FE /* AuroraPacketTunnelRuntime.swift */,
 				3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */,
 				3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */,
+				B4C571DE65AE541DF37702EB /* AuroraTokenWallet.swift */,
 				EC0E1EB4E6547496142467EE /* AuroraTunnelManager.swift */,
 			);
 			name = AuroraKit;
@@ -513,6 +517,7 @@
 				3D2732712428594EA96C1619 /* AuroraPacketTunnelRuntime.swift in Sources */,
 				1D476DAA0BB105B69879EED1 /* AuroraRedactor.swift in Sources */,
 				77A9C275212DE7D6F6DC6849 /* AuroraServerClient.swift in Sources */,
+				98B3B84ABBFB6E375D98D25F /* AuroraTokenWallet.swift in Sources */,
 				107E8DF94A5E1F62D06B8F78 /* AuroraTunnelManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -527,6 +532,7 @@
 				43F2245BB154769893E25598 /* AuroraPacketTunnelRuntime.swift in Sources */,
 				F398C96FB2AA206560021F08 /* AuroraRedactor.swift in Sources */,
 				E416114E84202364870CF8FF /* AuroraServerClient.swift in Sources */,
+				8F8420EA6160222A6EAE4254 /* AuroraTokenWallet.swift in Sources */,
 				54A670EEA6C0FCD1033F0A96 /* AuroraTunnelManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
