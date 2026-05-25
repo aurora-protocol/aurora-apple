@@ -31,6 +31,11 @@ public enum AuroraPacketBatchCodec {
         var out = Data()
         appendUInt16(UInt16(batch.packets.count), to: &out)
         for (packet, protocolNumber) in zip(batch.packets, batch.protocolNumbers) {
+            guard let packetProtocolNumber = packetProtocolNumber(for: packet),
+                  packetProtocolNumber == protocolNumber
+            else {
+                throw AuroraPacketBatchCodecError.invalidBatch
+            }
             guard !packet.isEmpty,
                   packet.count <= maxPacketBytes,
                   protocolNumber >= 0,
@@ -64,7 +69,11 @@ public enum AuroraPacketBatchCodec {
             else {
                 throw AuroraPacketBatchCodecError.invalidBatch
             }
-            packets.append(data.subdata(in: offset..<(offset + packetLength)))
+            let packet = data.subdata(in: offset..<(offset + packetLength))
+            guard packetProtocolNumber(for: packet) == protocolNumber else {
+                throw AuroraPacketBatchCodecError.invalidBatch
+            }
+            packets.append(packet)
             protocolNumbers.append(protocolNumber)
             offset += packetLength
         }
@@ -105,6 +114,20 @@ public enum AuroraPacketBatchCodec {
             UInt32(data[offset + 3])
         offset += 4
         return value
+    }
+
+    private static func packetProtocolNumber(for packet: Data) -> Int? {
+        guard let first = packet.first else {
+            return nil
+        }
+        switch first >> 4 {
+        case 4:
+            return 2
+        case 6:
+            return 30
+        default:
+            return nil
+        }
     }
 }
 

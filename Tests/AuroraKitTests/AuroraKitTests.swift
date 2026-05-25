@@ -1032,6 +1032,25 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(decoded, batch)
     }
 
+    func testPacketBatchCodecRejectsProtocolNumberMismatch() throws {
+        let encodedMismatch = Data([
+            0x00, 0x01,
+            0x00, 0x1e,
+            0x00, 0x00, 0x00, 0x04,
+            0x45, 0x00, 0x00, 0x14,
+        ])
+
+        XCTAssertThrowsError(try AuroraPacketBatchCodec.decode(encodedMismatch))
+        XCTAssertThrowsError(try AuroraPacketBatchCodec.encode(AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [30]
+        )))
+        XCTAssertThrowsError(try AuroraPacketBatchCodec.encode(AuroraPacketFlowBatch(
+            packets: [Data([0x05, 0x00, 0x00, 0x14])],
+            protocolNumbers: [0]
+        )))
+    }
+
     func testServerBackedPacketTunnelCoreExchangesPacketBatchWithServer() async throws {
         let statusClient = MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
         let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
