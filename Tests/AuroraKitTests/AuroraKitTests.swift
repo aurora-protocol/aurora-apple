@@ -67,6 +67,69 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(state, .unavailable("invalid server"))
     }
 
+    func testControllerChecksPacketExchangeThroughInjectedClient() async {
+        let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x15])],
+            protocolNumbers: [2]
+        ))
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            packetClient: packetClient
+        )
+
+        await controller.checkPacketExchange()
+
+        let requestedEndpoint = await packetClient.requestedEndpoint
+        let requestedBatch = await packetClient.requestedBatch
+        let state = await controller.packetExchangeState
+        let exchanged = await controller.lastPacketExchange
+        XCTAssertEqual(requestedEndpoint?.absoluteString, "http://127.0.0.1:9443")
+        XCTAssertEqual(requestedBatch?.packets, [Data([0x45, 0x00, 0x00, 0x14])])
+        XCTAssertEqual(requestedBatch?.protocolNumbers, [2])
+        XCTAssertEqual(state, .ready(packetCount: 1))
+        XCTAssertEqual(exchanged?.packets, [Data([0x45, 0x00, 0x00, 0x15])])
+        XCTAssertEqual(exchanged?.protocolNumbers, [2])
+    }
+
+    func testControllerReportsPacketExchangeFailureWithoutChangingServerStatus() async {
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            packetClient: MockPacketExchangeClient(error: AuroraClientError.unavailable)
+        )
+
+        await controller.refreshStatus()
+        await controller.checkPacketExchange()
+
+        let state = await controller.state
+        let packetState = await controller.packetExchangeState
+        let exchanged = await controller.lastPacketExchange
+        XCTAssertEqual(state, .ready)
+        XCTAssertEqual(packetState, .unavailable("packet exchange unavailable"))
+        XCTAssertNil(exchanged)
+    }
+
+    func testControllerRejectingInvalidEndpointClearsPacketExchangeResult() async {
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            packetClient: MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
+                packets: [Data([0x45, 0x00, 0x00, 0x15])],
+                protocolNumbers: [2]
+            ))
+        )
+        await controller.checkPacketExchange()
+
+        let updated = await controller.updateEndpoint("not a server")
+
+        let packetState = await controller.packetExchangeState
+        let exchanged = await controller.lastPacketExchange
+        XCTAssertFalse(updated)
+        XCTAssertEqual(packetState, .idle)
+        XCTAssertNil(exchanged)
+    }
+
     func testPacketTunnelConfigurationBuildsNetworkExtensionFloor() throws {
         let endpoint = URL(string: "https://relay.example:9443")!
         let tunnel = AuroraPacketTunnelConfiguration(configuration: AuroraConfiguration(endpoint: endpoint))
@@ -315,18 +378,28 @@ private struct MockServerClient: AuroraServerClient {
 }
 
 private actor MockPacketExchangeClient: AuroraPacketExchangeClient {
-    private let outboundBatch: AuroraPacketFlowBatch
+    private let outboundBatch: AuroraPacketFlowBatch?
+    private let error: (any Error)?
     private(set) var requestedEndpoint: URL?
     private(set) var requestedBatch: AuroraPacketFlowBatch?
 
     init(outboundBatch: AuroraPacketFlowBatch) {
         self.outboundBatch = outboundBatch
+        self.error = nil
+    }
+
+    init(error: any Error) {
+        self.outboundBatch = nil
+        self.error = error
     }
 
     func exchangePacketBatch(endpoint: URL, batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
         requestedEndpoint = endpoint
         requestedBatch = batch
-        return outboundBatch
+        if let error {
+            throw error
+        }
+        return outboundBatch ?? AuroraPacketFlowBatch(packets: [], protocolNumbers: [])
     }
 }
 

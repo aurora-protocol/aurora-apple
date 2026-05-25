@@ -18,6 +18,7 @@ public struct AuroraStatusView: View {
                         .autocorrectionDisabled()
                     LabeledContent("Route", value: controller.configuration.routePolicy)
                     LabeledContent("State", value: stateText)
+                    LabeledContent("Packet", value: packetExchangeText)
                     LabeledContent("Tunnel", value: tunnelStateText)
                 }
 
@@ -30,6 +31,15 @@ public struct AuroraStatusView: View {
                         Label("Check Server", systemImage: "network")
                     }
                     .disabled(isChecking)
+
+                    Button {
+                        if controller.updateEndpoint(endpointText) {
+                            Task { await controller.checkPacketExchange() }
+                        }
+                    } label: {
+                        Label("Packet Check", systemImage: "arrow.left.arrow.right")
+                    }
+                    .disabled(isPacketChecking)
                 }
 
                 Section {
@@ -76,6 +86,13 @@ public struct AuroraStatusView: View {
         return false
     }
 
+    private var isPacketChecking: Bool {
+        if case .checking = controller.packetExchangeState {
+            return true
+        }
+        return false
+    }
+
     private var isTunnelBusy: Bool {
         switch controller.tunnelState {
         case .installing, .connecting, .disconnecting:
@@ -112,6 +129,19 @@ public struct AuroraStatusView: View {
             return "connected"
         case .disconnecting:
             return "disconnecting"
+        case .unavailable(let reason):
+            return reason
+        }
+    }
+
+    private var packetExchangeText: String {
+        switch controller.packetExchangeState {
+        case .idle:
+            return "idle"
+        case .checking:
+            return "checking"
+        case .ready(let packetCount):
+            return "\(packetCount) packet"
         case .unavailable(let reason):
             return reason
         }

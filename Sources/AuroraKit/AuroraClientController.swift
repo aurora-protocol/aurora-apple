@@ -9,22 +9,34 @@ public final class AuroraClientController: ObservableObject {
         case unavailable(String)
     }
 
+    public enum PacketExchangeState: Equatable, Sendable {
+        case idle
+        case checking
+        case ready(packetCount: Int)
+        case unavailable(String)
+    }
+
     @Published public private(set) var state: State = .idle
+    @Published public private(set) var packetExchangeState: PacketExchangeState = .idle
+    @Published public private(set) var lastPacketExchange: AuroraPacketFlowBatch?
     @Published public private(set) var tunnelState: AuroraTunnelLifecycleState = .disconnected
     @Published public private(set) var lastStatus: AuroraServerStatus?
     @Published public private(set) var redactedDiagnosticLine: String = ""
 
     public var configuration: AuroraConfiguration
     private let serverClient: any AuroraServerClient
+    private let packetClient: any AuroraPacketExchangeClient
     private let tunnelManager: any AuroraTunnelManager
 
     public init(
         configuration: AuroraConfiguration,
         serverClient: any AuroraServerClient = URLSessionAuroraServerClient(),
+        packetClient: any AuroraPacketExchangeClient = URLSessionAuroraServerClient(),
         tunnelManager: any AuroraTunnelManager = AuroraSystemTunnelManager()
     ) {
         self.configuration = configuration
         self.serverClient = serverClient
+        self.packetClient = packetClient
         self.tunnelManager = tunnelManager
     }
 
@@ -32,11 +44,15 @@ public final class AuroraClientController: ObservableObject {
     public func updateEndpoint(_ endpointText: String) -> Bool {
         guard let endpoint = AuroraConfiguration.validatedEndpoint(from: endpointText) else {
             state = .unavailable("invalid server")
+            lastPacketExchange = nil
+            packetExchangeState = .idle
             return false
         }
         configuration.endpoint = endpoint
         lastStatus = nil
         state = .idle
+        lastPacketExchange = nil
+        packetExchangeState = .idle
         redactedDiagnosticLine = AuroraRedactor.redact("endpoint=\(endpoint.absoluteString)")
         return true
     }
@@ -53,6 +69,31 @@ public final class AuroraClientController: ObservableObject {
         } catch {
             state = .unavailable("server unavailable")
             redactedDiagnosticLine = AuroraRedactor.redact("endpoint=\(configuration.endpoint.absoluteString) error=\(error)")
+        }
+    }
+
+    public func checkPacketExchange() async {
+        packetExchangeState = .checking
+        let probe = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        )
+        do {
+            let exchanged = try await packetClient.exchangePacketBatch(
+                endpoint: configuration.endpoint,
+                batch: probe
+            )
+            lastPacketExchange = exchanged
+            packetExchangeState = .ready(packetCount: exchanged.packets.count)
+            redactedDiagnosticLine = AuroraRedactor.redact(
+                "endpoint=\(configuration.endpoint.absoluteString) packet_exchange=ready packets=\(exchanged.packets.count)"
+            )
+        } catch {
+            lastPacketExchange = nil
+            packetExchangeState = .unavailable("packet exchange unavailable")
+            redactedDiagnosticLine = AuroraRedactor.redact(
+                "endpoint=\(configuration.endpoint.absoluteString) packet_exchange_error=\(error)"
+            )
         }
     }
 
