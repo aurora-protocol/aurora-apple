@@ -181,6 +181,75 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(closed)
     }
 
+    func testPacketBatchCodecMatchesServerVector() throws {
+        let batch = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        )
+
+        let encoded = try AuroraPacketBatchCodec.encode(batch)
+        let decoded = try AuroraPacketBatchCodec.decode(encoded)
+
+        XCTAssertEqual(encoded.map { String(format: "%02x", $0) }.joined(), "000100020000000445000014")
+        XCTAssertEqual(decoded, batch)
+    }
+
+    func testServerBackedPacketTunnelCoreExchangesPacketBatchWithServer() async throws {
+        let statusClient = MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
+        let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x15])],
+            protocolNumbers: [2]
+        ))
+        let core = AuroraServerBackedPacketTunnelCore(
+            statusClient: statusClient,
+            packetClient: packetClient
+        )
+        let configuration = AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!)
+        let inbound = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        )
+
+        try await core.connect(configuration: configuration)
+        let outbound = try await core.ingestPacketBatch(inbound)
+
+        let requestedEndpoint = await packetClient.requestedEndpoint
+        let requestedBatch = await packetClient.requestedBatch
+        XCTAssertEqual(outbound.packets, [Data([0x45, 0x00, 0x00, 0x15])])
+        XCTAssertEqual(outbound.protocolNumbers, [2])
+        XCTAssertEqual(requestedEndpoint?.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(requestedBatch, inbound)
+    }
+
+    func testURLSessionServerClientPostsPacketBatchToPrivateCarrierSlot() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PacketExchangeURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = URLSessionAuroraServerClient(session: session)
+        let inbound = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        )
+        let outbound = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x15])],
+            protocolNumbers: [2]
+        )
+        PacketExchangeURLProtocol.setResponse(try AuroraPacketBatchCodec.encode(outbound))
+
+        let exchanged = try await client.exchangePacketBatch(
+            endpoint: URL(string: "https://relay.example:9443")!,
+            batch: inbound
+        )
+
+        let request = PacketExchangeURLProtocol.lastRequest
+        let body = PacketExchangeURLProtocol.lastBody
+        XCTAssertEqual(request?.httpMethod, "POST")
+        XCTAssertEqual(request?.url?.path, "/assets/app.bin")
+        XCTAssertEqual(request?.value(forHTTPHeaderField: "Content-Type"), "application/octet-stream")
+        XCTAssertEqual(body, try AuroraPacketBatchCodec.encode(inbound))
+        XCTAssertEqual(exchanged, outbound)
+    }
+
     func testControllerInstallsAndStartsTunnelThroughInjectedManager() async {
         let tunnelManager = MockTunnelManager()
         let endpoint = URL(string: "https://relay.example:9443")!
@@ -242,6 +311,117 @@ private struct MockServerClient: AuroraServerClient {
 
     func fetchStatus(endpoint: URL) async throws -> AuroraServerStatus {
         status
+    }
+}
+
+private actor MockPacketExchangeClient: AuroraPacketExchangeClient {
+    private let outboundBatch: AuroraPacketFlowBatch
+    private(set) var requestedEndpoint: URL?
+    private(set) var requestedBatch: AuroraPacketFlowBatch?
+
+    init(outboundBatch: AuroraPacketFlowBatch) {
+        self.outboundBatch = outboundBatch
+    }
+
+    func exchangePacketBatch(endpoint: URL, batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        requestedEndpoint = endpoint
+        requestedBatch = batch
+        return outboundBatch
+    }
+}
+
+private final class PacketExchangeURLProtocol: URLProtocol, @unchecked Sendable {
+    private final class State: @unchecked Sendable {
+        private let lock = NSLock()
+        var response = Data()
+        var lastRequest: URLRequest?
+        var lastBody: Data?
+
+        func setResponse(_ data: Data) {
+            lock.lock()
+            defer { lock.unlock() }
+            response = data
+            lastRequest = nil
+            lastBody = nil
+        }
+
+        func record(request: URLRequest, body: Data?) -> Data {
+            lock.lock()
+            defer { lock.unlock() }
+            lastRequest = request
+            lastBody = body
+            return response
+        }
+
+        func request() -> URLRequest? {
+            lock.lock()
+            defer { lock.unlock() }
+            return lastRequest
+        }
+
+        func body() -> Data? {
+            lock.lock()
+            defer { lock.unlock() }
+            return lastBody
+        }
+    }
+
+    private static let state = State()
+
+    static var lastRequest: URLRequest? {
+        state.request()
+    }
+
+    static var lastBody: Data? {
+        state.body()
+    }
+
+    static func setResponse(_ data: Data) {
+        state.setResponse(data)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let body = request.httpBody ?? Self.readBodyStream(request.httpBodyStream)
+        let responseBody = Self.state.record(request: request, body: body)
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/octet-stream"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: responseBody)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+
+    private static func readBodyStream(_ stream: InputStream?) -> Data? {
+        guard let stream else {
+            return nil
+        }
+        stream.open()
+        defer { stream.close() }
+
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            if count > 0 {
+                data.append(buffer, count: count)
+            } else {
+                break
+            }
+        }
+        return data
     }
 }
 
