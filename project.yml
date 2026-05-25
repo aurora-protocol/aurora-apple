@@ -1,0 +1,105 @@
+name: AuroraApple
+options:
+  bundleIdPrefix: org.aurora-protocol
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGNING_ALLOWED: "NO"
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.1.0"
+targets:
+  AuroraKit_iOS:
+    type: framework
+    platform: iOS
+    sources:
+      - path: Sources/AuroraKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.kit.ios
+        PRODUCT_NAME: AuroraKit
+        PRODUCT_MODULE_NAME: AuroraKit
+        GENERATE_INFOPLIST_FILE: YES
+  AuroraKit_macOS:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/AuroraKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.kit.macos
+        PRODUCT_NAME: AuroraKit
+        PRODUCT_MODULE_NAME: AuroraKit
+        GENERATE_INFOPLIST_FILE: YES
+  AuroraUI_iOS:
+    type: framework
+    platform: iOS
+    sources:
+      - path: Sources/AuroraUI
+    dependencies:
+      - target: AuroraKit_iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.ui.ios
+        PRODUCT_NAME: AuroraUI
+        PRODUCT_MODULE_NAME: AuroraUI
+        GENERATE_INFOPLIST_FILE: YES
+  AuroraUI_macOS:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/AuroraUI
+    dependencies:
+      - target: AuroraKit_macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.ui.macos
+        PRODUCT_NAME: AuroraUI
+        PRODUCT_MODULE_NAME: AuroraUI
+        GENERATE_INFOPLIST_FILE: YES
+  AuroraIOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Apps/iOS
+    dependencies:
+      - target: AuroraUI_iOS
+    info:
+      path: Apps/iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Aurora
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.ios
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+  AuroraMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Apps/macOS
+    dependencies:
+      - target: AuroraUI_macOS
+    info:
+      path: Apps/macOS/Info.plist
+      properties:
+        CFBundleDisplayName: Aurora
+        LSApplicationCategoryType: public.app-category.utilities
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.macos
+schemes:
+  AuroraIOS:
+    build:
+      targets:
+        AuroraIOS: all
+  AuroraMac:
+    build:
+      targets:
+        AuroraMac: all
