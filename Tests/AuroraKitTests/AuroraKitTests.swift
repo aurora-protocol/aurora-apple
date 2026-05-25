@@ -936,6 +936,35 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(writtenBatches.map(\.protocolNumbers), [[2]])
     }
 
+    func testPacketTunnelRuntimeDropsOutboundBatchWithMismatchedProtocolFamily() async throws {
+        let packetFlow = MockPacketFlow(
+            batches: [
+                AuroraPacketFlowBatch(
+                    packets: [Data([0x45, 0x00, 0x00, 0x14])],
+                    protocolNumbers: [2]
+                ),
+            ]
+        )
+        let core = MockPacketTunnelCore(outboundPackets: [
+            AuroraPacketFlowBatch(
+                packets: [Data([0x45, 0x00, 0x00, 0x15])],
+                protocolNumbers: [30]
+            ),
+        ])
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        let processed = try await runtime.processNextBatch()
+
+        let writtenBatches = await packetFlow.writtenBatches
+        XCTAssertTrue(processed)
+        XCTAssertEqual(writtenBatches, [])
+    }
+
     func testPacketTunnelRuntimeForwardsNetworkPathChangesAndClose() async throws {
         let packetFlow = MockPacketFlow(batches: [])
         let core = MockPacketTunnelCore()

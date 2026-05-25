@@ -227,7 +227,7 @@ public actor AuroraPacketTunnelRuntime {
             return true
         }
         let outbound = try await core.ingestPacketBatch(inbound)
-        if !outbound.isEmpty, outbound.packets.count == outbound.protocolNumbers.count {
+        if !outbound.isEmpty, Self.canWriteToPacketFlow(outbound) {
             _ = await packetFlow.writePacketBatch(outbound)
         }
         return true
@@ -278,6 +278,10 @@ public actor AuroraPacketTunnelRuntime {
         coreClosed = true
         connected = false
         await core.close()
+    }
+
+    private static func canWriteToPacketFlow(_ batch: AuroraPacketFlowBatch) -> Bool {
+        (try? AuroraPacketBatchCodec.encode(batch)) != nil
     }
 }
 
