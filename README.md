@@ -17,6 +17,8 @@ swift test
 xcodegen generate
 xcodebuild -project AuroraApple.xcodeproj -scheme AuroraMac -destination 'platform=macOS' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
 xcodebuild -project AuroraApple.xcodeproj -scheme AuroraIOS -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
+xcodebuild -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_macOS -destination 'platform=macOS' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
+xcodebuild -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_iOS -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
 ```
 
 The generated Xcode project is committed so the apps can be opened and built in Xcode without a generator step.

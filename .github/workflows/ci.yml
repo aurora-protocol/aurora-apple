@@ -15,3 +15,7 @@ jobs:
         run: xcodebuild -project AuroraApple.xcodeproj -scheme AuroraMac -destination 'platform=macOS' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
       - name: Build iOS app
         run: xcodebuild -project AuroraApple.xcodeproj -scheme AuroraIOS -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
+      - name: Build macOS packet tunnel extension
+        run: xcodebuild -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_macOS -destination 'platform=macOS' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
+      - name: Build iOS packet tunnel extension
+        run: xcodebuild -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_iOS -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO

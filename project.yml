@@ -79,6 +79,29 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.ios
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+  AuroraPacketTunnel_iOS:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SharedNetworkExtension
+        excludes:
+          - Info-iOS.plist
+          - Info-macOS.plist
+    dependencies:
+      - target: AuroraKit_iOS
+    info:
+      path: SharedNetworkExtension/Info-iOS.plist
+      properties:
+        CFBundleDisplayName: Aurora Packet Tunnel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.ios.packet-tunnel
+        PRODUCT_NAME: AuroraPacketTunnel
+        PRODUCT_MODULE_NAME: AuroraPacketTunnel
+        APPLICATION_EXTENSION_API_ONLY: YES
   AuroraMac:
     type: application
     platform: macOS
@@ -94,12 +117,43 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.macos
+  AuroraPacketTunnel_macOS:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: SharedNetworkExtension
+        excludes:
+          - Info-iOS.plist
+          - Info-macOS.plist
+    dependencies:
+      - target: AuroraKit_macOS
+    info:
+      path: SharedNetworkExtension/Info-macOS.plist
+      properties:
+        CFBundleDisplayName: Aurora Packet Tunnel
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.macos.packet-tunnel
+        PRODUCT_NAME: AuroraPacketTunnel
+        PRODUCT_MODULE_NAME: AuroraPacketTunnel
+        APPLICATION_EXTENSION_API_ONLY: YES
 schemes:
   AuroraIOS:
     build:
       targets:
         AuroraIOS: all
+  AuroraPacketTunnel_iOS:
+    build:
+      targets:
+        AuroraPacketTunnel_iOS: all
   AuroraMac:
     build:
       targets:
         AuroraMac: all
+  AuroraPacketTunnel_macOS:
+    build:
+      targets:
+        AuroraPacketTunnel_macOS: all

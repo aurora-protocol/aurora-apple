@@ -66,6 +66,20 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(endpoint.absoluteString, "http://127.0.0.1:9443")
         XCTAssertEqual(state, .unavailable("invalid server"))
     }
+
+    func testProjectBuildsSharedPacketTunnelTargets() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
+        let workflow = try String(contentsOf: root.appendingPathComponent(".github/workflows/ci.yml"), encoding: .utf8)
+
+        for target in ["AuroraPacketTunnel_iOS", "AuroraPacketTunnel_macOS"] {
+            XCTAssertTrue(project.contains("\(target):"), "project.yml missing \(target)")
+            XCTAssertTrue(workflow.contains("-scheme \(target)"), "CI workflow does not build \(target)")
+        }
+        XCTAssertTrue(project.contains("type: app-extension"))
+        XCTAssertTrue(project.contains("com.apple.networkextension.packet-tunnel"))
+        XCTAssertTrue(project.contains("SharedNetworkExtension"))
+    }
 }
 
 private struct MockServerClient: AuroraServerClient {
