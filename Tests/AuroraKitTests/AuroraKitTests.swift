@@ -152,6 +152,26 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(state, .idle)
     }
 
+    func testControllerPersistsEndpointUpdatesAsSharedPortableProfile() async throws {
+        let store = MockPortableProfileStore()
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+            serverClient: MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true)),
+            profileStore: store
+        )
+
+        let updated = await controller.updateEndpoint("https://relay.example:9443")
+
+        let savedProfile = try XCTUnwrap(store.savedProfileText)
+        let reparsed = try AuroraPortableProfile.parse(savedProfile)
+        XCTAssertTrue(updated)
+        XCTAssertEqual(reparsed.endpoint?.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(reparsed.localMode, "platform-vpn")
+        XCTAssertFalse(savedProfile.contains("admission_proof"))
+        XCTAssertFalse(savedProfile.contains("token_authenticator"))
+        XCTAssertFalse(savedProfile.contains("hint_secret"))
+    }
+
     func testEndpointValidationRejectsRemotePlainHTTPButAllowsLoopback() {
         XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "http://relay.example:9443"))
         XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "http://203.0.113.7:9443"))

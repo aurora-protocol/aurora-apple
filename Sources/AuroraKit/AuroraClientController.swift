@@ -65,7 +65,16 @@ public final class AuroraClientController: ObservableObject {
             resetServerDerivedState()
             return false
         }
-        configuration.endpoint = endpoint
+        let nextConfiguration = AuroraConfiguration(endpoint: endpoint, routePolicy: configuration.routePolicy)
+        let profile = AuroraPortableProfile(
+            configuration: nextConfiguration,
+            route: "auto",
+            localMode: "platform-vpn"
+        )
+        guard persistPortableProfile(profile) else {
+            return false
+        }
+        configuration = nextConfiguration
         resetServerDerivedState()
         state = .idle
         redactedDiagnosticLine = AuroraRedactor.redact("endpoint=\(endpoint.absoluteString)")
@@ -273,12 +282,7 @@ public final class AuroraClientController: ObservableObject {
 
         let nextConfiguration = profile.configuration(defaultEndpoint: configuration.endpoint)
         if persist {
-            do {
-                try profileStore?.savePortableProfile(profile.tomlString())
-            } catch {
-                state = .unavailable("profile storage unavailable")
-                resetServerDerivedState()
-                redactedDiagnosticLine = AuroraRedactor.redact("profile_store_error=\(error)")
+            guard persistPortableProfile(profile) else {
                 return false
             }
         }
@@ -290,6 +294,21 @@ public final class AuroraClientController: ObservableObject {
             "endpoint=\(configuration.endpoint.absoluteString) profile_import=ready route_policy=\(configuration.routePolicy)"
         )
         return true
+    }
+
+    private func persistPortableProfile(_ profile: AuroraPortableProfile) -> Bool {
+        guard let profileStore else {
+            return true
+        }
+        do {
+            try profileStore.savePortableProfile(profile.tomlString())
+            return true
+        } catch {
+            state = .unavailable("profile storage unavailable")
+            resetServerDerivedState()
+            redactedDiagnosticLine = AuroraRedactor.redact("profile_store_error=\(error)")
+            return false
+        }
     }
 }
 
