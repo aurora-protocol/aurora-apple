@@ -927,6 +927,30 @@ final class AuroraKitTests: XCTestCase {
         }
     }
 
+    func testPortableProfileRequiresLabProfileForLabTokens() throws {
+        XCTAssertThrowsError(try AuroraPortableProfile.parse("""
+        [aurora]
+        profile = "adversarial-dpi"
+
+        [security]
+        allow_lab_tokens = true
+        """)) { error in
+            XCTAssertEqual(
+                error as? AuroraPortableProfileError,
+                .invalidValue(section: "security", key: "allow_lab_tokens", value: "true")
+            )
+        }
+
+        let profile = try AuroraPortableProfile.parse("""
+        [aurora]
+        profile = "lab"
+
+        [security]
+        allow_lab_tokens = true
+        """)
+        XCTAssertTrue(profile.allowLabTokens)
+    }
+
     func testPacketTunnelRuntimeConnectsAndPumpsPacketBatch() async throws {
         let packetFlow = MockPacketFlow(
             batches: [

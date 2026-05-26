@@ -271,6 +271,7 @@ public struct AuroraPortableProfile: Equatable, Sendable {
         try require(Self.validLocalModes.contains(localMode), section: "local", key: "mode", value: localMode)
         try require(localDNS == "through-aurora", section: "local", key: "dns", value: localDNS)
         try require(Self.validReplayCaches.contains(replayCache), section: "storage", key: "replay_cache", value: replayCache)
+        try require(!allowLabTokens || profile == "lab", section: "security", key: "allow_lab_tokens", value: "\(allowLabTokens)")
     }
 
     private func require(_ ok: Bool, section: String, key: String, value: String) throws {
