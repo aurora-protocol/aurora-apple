@@ -1523,6 +1523,22 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(provider.contains("AuroraAppleSharedContainer.appGroupIdentifier()"), "packet tunnel provider missing App Group scope")
     }
 
+    func testPacketTunnelProviderConnectsCoreBeforeInstallingNetworkSettings() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let provider = try String(
+            contentsOf: root.appendingPathComponent("SharedNetworkExtension/PacketTunnelProvider.swift"),
+            encoding: .utf8
+        )
+
+        let startRange = try XCTUnwrap(provider.range(of: "try await runtime.start()"))
+        let settingsRange = try XCTUnwrap(provider.range(of: "try await applyTunnelNetworkSettings"))
+        XCTAssertLessThan(
+            startRange.lowerBound,
+            settingsRange.lowerBound,
+            "packet tunnel provider should connect the core before installing route and DNS settings"
+        )
+    }
+
     func testAppsConstructControllersWithSharedAppGroupProfileStore() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let appPaths = [

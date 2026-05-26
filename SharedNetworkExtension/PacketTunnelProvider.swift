@@ -22,33 +22,29 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         let serverClient = serverClient
         let packetFlow = NetworkExtensionPacketFlow(packetFlow: packetFlow)
         let pathObserver = pathObserver
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: configuration,
+            packetFlow: packetFlow,
+            core: AuroraServerBackedPacketTunnelCore(serverClient: serverClient)
+        )
+        self.runtime = runtime
 
-        setTunnelNetworkSettings(networkSettings(for: tunnelConfiguration)) { error in
-            if let error {
-                completion(error)
-                return
-            }
-            let runtime = AuroraPacketTunnelRuntime(
-                configuration: configuration,
-                packetFlow: packetFlow,
-                core: AuroraServerBackedPacketTunnelCore(serverClient: serverClient)
-            )
-            self.runtime = runtime
-            self.runtimeTask = Task {
-                do {
-                    try await runtime.start()
-                    pathObserver.start { change in
-                        Task {
-                            await runtime.notifyNetworkPathChange(change)
-                        }
+        runtimeTask = Task {
+            do {
+                try await runtime.start()
+                try await applyTunnelNetworkSettings(networkSettings(for: tunnelConfiguration))
+                pathObserver.start { change in
+                    Task {
+                        await runtime.notifyNetworkPathChange(change)
                     }
-                    await runtime.notifyNetworkPathChange(pathObserver.currentChange())
-                    completion(nil)
-                    await runtime.runUntilStopped()
-                } catch {
-                    pathObserver.stop()
-                    completion(error)
                 }
+                await runtime.notifyNetworkPathChange(pathObserver.currentChange())
+                completion(nil)
+                await runtime.runUntilStopped()
+            } catch {
+                pathObserver.stop()
+                await runtime.stop()
+                completion(error)
             }
         }
     }
@@ -88,6 +84,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private func resolvedConfiguration() -> AuroraConfiguration {
         let providerConfiguration = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration
         return configurationResolver.configuration(providerConfiguration: providerConfiguration)
+    }
+
+    private func applyTunnelNetworkSettings(_ settings: NEPacketTunnelNetworkSettings) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            setTunnelNetworkSettings(settings) { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: ())
+            }
+        }
     }
 
     private func networkSettings(for configuration: AuroraPacketTunnelConfiguration) -> NEPacketTunnelNetworkSettings {
