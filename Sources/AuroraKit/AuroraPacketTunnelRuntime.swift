@@ -380,6 +380,10 @@ public actor AuroraServerBackedPacketTunnelCore: AuroraPacketTunnelCore {
         guard issued.issuerMetadataHash.isEmpty || issued.issuerMetadataHash == metadata.issuerMetadataHash else {
             throw AuroraClientError.invalidAdmissionProof("issuer metadata hash mismatch")
         }
+        let spentKey = try await issuerClient.spendAdmissionToken(endpoint: endpoint, admissionProof: issued.admissionProof)
+        guard spentKey.count == 48 else {
+            throw AuroraClientError.invalidIssuerResponse("spent key length \(spentKey.count), want 48")
+        }
         try await tokenWallet.store(AuroraTokenWalletEntry(
             relayBucketID: issued.relayBucketIDHex,
             accessHintCredential: Data(),

@@ -10,6 +10,7 @@ public protocol AuroraIssuerClient: Sendable {
         endpoint: URL,
         request: AuroraBlindRSAIssueRequest
     ) async throws -> AuroraIssuedAdmissionToken
+    func spendAdmissionToken(endpoint: URL, admissionProof: Data) async throws -> Data
 }
 
 public struct AuroraIssuerMetadataEnvelope: Equatable, Sendable {
@@ -119,6 +120,34 @@ public extension URLSessionAuroraServerClient {
             expiryUnix: fields.expiryUnix
         )
     }
+
+    func spendAdmissionToken(endpoint: URL, admissionProof: Data) async throws -> Data {
+        guard !admissionProof.isEmpty else {
+            throw AuroraClientError.invalidIssueRequest("admission proof is empty")
+        }
+        let url = endpoint
+            .appendingPathComponent("issuer")
+            .appendingPathComponent("token")
+            .appendingPathComponent("spend")
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = try JSONEncoder().encode(SpendAdmissionTokenBody(admissionProof: admissionProof))
+
+        let (data, response) = try await session.data(for: urlRequest)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw AuroraClientError.unavailable
+        }
+        let envelope = try JSONDecoder().decode(SpendAdmissionTokenResponse.self, from: data)
+        guard envelope.spent else {
+            throw AuroraClientError.invalidIssuerResponse("token was not spent")
+        }
+        let spentKey = try Data(auroraHexString: envelope.spentKey)
+        guard spentKey.count == 48 else {
+            throw AuroraClientError.invalidIssuerResponse("spent key length \(spentKey.count), want 48")
+        }
+        return spentKey
+    }
 }
 
 extension AuroraBlindRSAIssueRequest {
@@ -176,6 +205,28 @@ private struct BlindRSAIssueResponse: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case admissionProof = "admission_proof"
+    }
+}
+
+private struct SpendAdmissionTokenBody: Encodable {
+    var admissionProof: String
+
+    init(admissionProof: Data) {
+        self.admissionProof = admissionProof.auroraHexString
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case admissionProof = "admission_proof"
+    }
+}
+
+private struct SpendAdmissionTokenResponse: Decodable {
+    var spent: Bool
+    var spentKey: String
+
+    enum CodingKeys: String, CodingKey {
+        case spent
+        case spentKey = "spent_key"
     }
 }
 

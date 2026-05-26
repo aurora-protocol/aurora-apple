@@ -514,6 +514,37 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(issueJSON?["expiry_unix"] as? Int, 1_800_000_000)
     }
 
+    func testURLSessionIssuerClientSpendsAdmissionToken() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [IssuerURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = URLSessionAuroraServerClient(session: session)
+        let admissionProof = Data(repeating: 0x6a, count: 96)
+        let spentKey = Data(repeating: 0x7b, count: 48)
+        IssuerURLProtocol.setResponses([
+            IssuerURLProtocol.Response(
+                path: "/issuer/token/spend",
+                contentType: "application/json",
+                body: #"{"spent":true,"spent_key":"\#(spentKey.auroraHexString)"}"#.data(using: .utf8)!
+            ),
+        ])
+
+        let returnedSpentKey = try await client.spendAdmissionToken(
+            endpoint: URL(string: "https://relay.example:9443")!,
+            admissionProof: admissionProof
+        )
+
+        let requests = IssuerURLProtocol.recordedRequests
+        XCTAssertEqual(returnedSpentKey, spentKey)
+        XCTAssertEqual(requests.map { $0.request.url?.path }, ["/issuer/token/spend"])
+        XCTAssertEqual(requests[0].request.httpMethod, "POST")
+        XCTAssertEqual(requests[0].request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let spendBody = try XCTUnwrap(requests[0].body)
+        let spendJSON = try JSONSerialization.jsonObject(with: spendBody) as? [String: Any]
+        XCTAssertEqual(spendJSON?["admission_proof"] as? String, admissionProof.auroraHexString)
+        XCTAssertNil(spendJSON?["token_authenticator"])
+    }
+
     func testControllerIssuesAdmissionTokenAndStoresItInWallet() async throws {
         let store = MockSecureCredentialStore()
         let wallet = AuroraTokenWallet(credentialStore: store)
@@ -1182,7 +1213,7 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertNil(packetEndpoint)
     }
 
-    func testServerBackedPacketTunnelCoreIssuesAdmissionTokenBeforePacketExchange() async throws {
+    func testServerBackedPacketTunnelCoreSpendsAdmissionTokenBeforePacketExchange() async throws {
         let statusClient = MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
         let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
             packets: [Data([0x45, 0x00, 0x00, 0x15])],
@@ -1214,9 +1245,13 @@ final class AuroraKitTests: XCTestCase {
         _ = try await core.ingestPacketBatch(inbound)
 
         let requestedIssue = await issuerClient.requestedIssue
+        let requestedSpendEndpoint = await issuerClient.requestedSpendEndpoint
+        let spentAdmissionProofs = await issuerClient.spentAdmissionProofs
         let saved = try await wallet.load(relayBucketID: Data(repeating: 0x81, count: 16).auroraHexString)
         XCTAssertEqual(requestedIssue?.tokenNonce.count, 32)
         XCTAssertEqual(requestedIssue?.redemptionContextHash.count, 48)
+        XCTAssertEqual(requestedSpendEndpoint?.absoluteString, "https://relay.example:9443")
+        XCTAssertEqual(spentAdmissionProofs, [Data("secret-proof".utf8)])
         XCTAssertEqual(saved?.admissionProof, Data("secret-proof".utf8))
         XCTAssertEqual(saved?.tokenAuthenticator, Data("secret-token".utf8))
         XCTAssertEqual(saved?.expiresAtUnix, 1_800_000_000)
@@ -1633,16 +1668,21 @@ private struct MockServerClient: AuroraServerClient {
 private actor MockIssuerClient: AuroraIssuerClient {
     private let issuedToken: AuroraIssuedAdmissionToken?
     private let error: (any Error)?
+    private let spentKey: Data
     private(set) var requestedEndpoint: URL?
     private(set) var requestedIssue: AuroraBlindRSAIssueRequest?
+    private(set) var requestedSpendEndpoint: URL?
+    private(set) var spentAdmissionProofs: [Data] = []
 
-    init(issuedToken: AuroraIssuedAdmissionToken) {
+    init(issuedToken: AuroraIssuedAdmissionToken, spentKey: Data = Data(repeating: 0x7b, count: 48)) {
         self.issuedToken = issuedToken
+        self.spentKey = spentKey
         self.error = nil
     }
 
     init(error: any Error) {
         self.issuedToken = nil
+        self.spentKey = Data(repeating: 0x7b, count: 48)
         self.error = error
     }
 
@@ -1665,6 +1705,15 @@ private actor MockIssuerClient: AuroraIssuerClient {
             tokenAuthenticator: Data(),
             expiryUnix: request.expiryUnix
         )
+    }
+
+    func spendAdmissionToken(endpoint: URL, admissionProof: Data) async throws -> Data {
+        requestedSpendEndpoint = endpoint
+        spentAdmissionProofs.append(admissionProof)
+        if let error {
+            throw error
+        }
+        return spentKey
     }
 }
 
