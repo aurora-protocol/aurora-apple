@@ -1471,16 +1471,48 @@ final class AuroraKitTests: XCTestCase {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let project = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
         let workflow = try String(contentsOf: root.appendingPathComponent(".github/workflows/ci.yml"), encoding: .utf8)
+        let readinessScript = try String(
+            contentsOf: root.appendingPathComponent("scripts/aurora-apple-check.sh"),
+            encoding: .utf8
+        )
 
         for target in ["AuroraPacketTunnel_iOS", "AuroraPacketTunnel_macOS"] {
             XCTAssertTrue(project.contains("\(target):"), "project.yml missing \(target)")
-            XCTAssertTrue(workflow.contains("-scheme \(target)"), "CI workflow does not build \(target)")
+            XCTAssertTrue(readinessScript.contains("-scheme \(target)"), "Apple readiness script does not build \(target)")
         }
+        XCTAssertTrue(workflow.contains("scripts/aurora-apple-check.sh"), "CI workflow does not run the Apple readiness script")
         XCTAssertTrue(project.contains("type: app-extension"))
         XCTAssertTrue(project.contains("com.apple.networkextension.packet-tunnel"))
         XCTAssertTrue(project.contains("SharedNetworkExtension"))
         XCTAssertTrue(project.contains("- target: AuroraPacketTunnel_iOS\n        embed: true"))
         XCTAssertTrue(project.contains("- target: AuroraPacketTunnel_macOS\n        embed: true"))
+    }
+
+    func testAppleReadinessScriptCoversPackageAndPlatformBuilds() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let scriptURL = root.appendingPathComponent("scripts/aurora-apple-check.sh")
+        let workflow = try String(contentsOf: root.appendingPathComponent(".github/workflows/ci.yml"), encoding: .utf8)
+        let readme = try String(contentsOf: root.appendingPathComponent("README.md"), encoding: .utf8)
+        let script: String
+
+        if FileManager.default.fileExists(atPath: scriptURL.path) {
+            script = try String(contentsOf: scriptURL, encoding: .utf8)
+            let attributes = try FileManager.default.attributesOfItem(atPath: scriptURL.path)
+            let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue ?? 0
+            XCTAssertNotEqual(permissions & 0o111, 0, "Apple readiness script should be executable")
+        } else {
+            XCTFail("Apple readiness script missing")
+            script = ""
+        }
+
+        XCTAssertTrue(workflow.contains("scripts/aurora-apple-check.sh"), "CI should call the shared Apple readiness script")
+        XCTAssertTrue(readme.contains("scripts/aurora-apple-check.sh"), "README should document the shared Apple readiness script")
+        XCTAssertTrue(script.contains("swift test"), "Apple readiness script should run Swift package tests")
+        XCTAssertTrue(script.contains("CODE_SIGNING_ALLOWED=NO"), "Apple readiness script should use unsigned local builds")
+
+        for scheme in ["AuroraMac", "AuroraIOS", "AuroraPacketTunnel_macOS", "AuroraPacketTunnel_iOS"] {
+            XCTAssertTrue(script.contains("-scheme \(scheme)"), "Apple readiness script should build \(scheme)")
+        }
     }
 
     func testProjectDeclaresPacketTunnelEntitlements() throws {

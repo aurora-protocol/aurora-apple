@@ -9,13 +9,5 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Test Swift package
-        run: swift test
-      - name: Build macOS app
-        run: xcodebuild -project AuroraApple.xcodeproj -scheme AuroraMac -destination 'platform=macOS' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
-      - name: Build iOS app
-        run: xcodebuild -project AuroraApple.xcodeproj -scheme AuroraIOS -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
-      - name: Build macOS packet tunnel extension
-        run: xcodebuild -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_macOS -destination 'platform=macOS' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
-      - name: Build iOS packet tunnel extension
-        run: xcodebuild -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_iOS -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
+      - name: Check Apple package and app targets
+        run: scripts/aurora-apple-check.sh

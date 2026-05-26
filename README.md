@@ -13,12 +13,13 @@ Aurora Apple contains the iOS and macOS client apps plus shared Swift client lib
 ## Local checks
 
 ```sh
-swift test
-xcodegen generate
-xcodebuild -project AuroraApple.xcodeproj -scheme AuroraMac -destination 'platform=macOS' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
-xcodebuild -project AuroraApple.xcodeproj -scheme AuroraIOS -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
-xcodebuild -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_macOS -destination 'platform=macOS' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
-xcodebuild -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_iOS -destination 'generic/platform=iOS Simulator' -derivedDataPath DerivedData build CODE_SIGNING_ALLOWED=NO
+scripts/aurora-apple-check.sh
 ```
 
-The generated Xcode project is committed so the apps can be opened and built in Xcode without a generator step.
+The readiness check runs the Swift package tests and unsigned Xcode builds for `AuroraMac`, `AuroraIOS`, `AuroraPacketTunnel_macOS`, and `AuroraPacketTunnel_iOS`.
+
+The generated Xcode project is committed so the apps can be opened and built in Xcode without a generator step. Regenerate it after editing `project.yml`:
+
+```sh
+xcodegen generate
+```
