@@ -163,6 +163,15 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertNotNil(AuroraConfiguration.validatedEndpoint(from: "https://relay.example:9443"))
     }
 
+    func testEndpointValidationRequiresOriginOnlyURL() {
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "https://relay.example:9443/private"))
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "https://relay.example:9443/?debug=true"))
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "https://relay.example:9443/#fragment"))
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "https://user@relay.example:9443"))
+        XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "https://user:pass@relay.example:9443"))
+        XCTAssertNotNil(AuroraConfiguration.validatedEndpoint(from: "https://relay.example:9443/"))
+    }
+
     func testControllerRejectsInvalidEndpointInput() async {
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),

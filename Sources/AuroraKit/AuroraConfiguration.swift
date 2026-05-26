@@ -15,6 +15,11 @@ public struct AuroraConfiguration: Equatable, Sendable {
               let scheme = url.scheme?.lowercased(),
               (scheme == "http" || scheme == "https"),
               let host = url.host,
+              url.user == nil,
+              url.password == nil,
+              url.query == nil,
+              url.fragment == nil,
+              url.path.isEmpty || url.path == "/",
               scheme == "https" || Self.isLoopbackHost(host)
         else {
             return nil
