@@ -16,23 +16,31 @@ targets:
     platform: iOS
     sources:
       - path: Sources/AuroraKit
+    dependencies:
+      - framework: Vendor/AuroraCore.xcframework
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.kit.ios
         PRODUCT_NAME: AuroraKit
         PRODUCT_MODULE_NAME: AuroraKit
         GENERATE_INFOPLIST_FILE: YES
+        OTHER_LDFLAGS: -lresolv -framework Security -framework CoreFoundation
   AuroraKit_macOS:
     type: framework
     platform: macOS
     sources:
       - path: Sources/AuroraKit
+    dependencies:
+      - framework: Vendor/AuroraCore.xcframework
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.aurora-protocol.aurora.kit.macos
         PRODUCT_NAME: AuroraKit
         PRODUCT_MODULE_NAME: AuroraKit
         GENERATE_INFOPLIST_FILE: YES
+        OTHER_LDFLAGS: -lresolv -framework Security -framework CoreFoundation
   AuroraUI_iOS:
     type: framework
     platform: iOS

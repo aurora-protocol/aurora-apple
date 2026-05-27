@@ -474,14 +474,14 @@ final class AuroraKitTests: XCTestCase {
         let redemptionContextHash = Data(repeating: 0xb2, count: 48)
         IssuerURLProtocol.setResponses([
             IssuerURLProtocol.Response(
-                path: "/issuer/issuer-metadata",
-                contentType: "application/json",
-                body: #"{"issuer_metadata":"\#(issuerMetadata.auroraHexString)","issuer_metadata_hash":"\#(issuerMetadataHash.auroraHexString)"}"#.data(using: .utf8)!
+                path: "/assets/app.bin",
+                contentType: "application/octet-stream",
+                body: CarrierFixture.metadataResponse(metadata: issuerMetadata, hash: issuerMetadataHash)
             ),
             IssuerURLProtocol.Response(
-                path: "/issuer/blind-rsa/issue",
-                contentType: "application/json",
-                body: #"{"admission_proof":"\#(admissionProof.auroraHexString)"}"#.data(using: .utf8)!
+                path: "/assets/app.bin",
+                contentType: "application/octet-stream",
+                body: CarrierFixture.issueResponse(admissionProof)
             ),
         ])
 
@@ -503,15 +503,20 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(issued.tokenAuthenticator, Data(repeating: 0x92, count: 256))
         XCTAssertEqual(issued.issuerMetadataHash, issuerMetadataHash)
         XCTAssertEqual(issued.expiryUnix, 1_800_000_000)
-        XCTAssertEqual(requests.map { $0.request.url?.path }, ["/issuer/issuer-metadata", "/issuer/blind-rsa/issue"])
-        XCTAssertEqual(requests[0].request.httpMethod, "GET")
-        XCTAssertEqual(requests[1].request.httpMethod, "POST")
-        XCTAssertEqual(requests[1].request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        // Issuance rides the cover carrier surface, never a public issuer path.
+        XCTAssertEqual(requests.map { $0.request.url?.path }, ["/assets/app.bin", "/assets/app.bin"])
+        XCTAssertEqual(requests.map { $0.request.httpMethod }, ["POST", "POST"])
+        XCTAssertEqual(
+            requests.map { $0.request.value(forHTTPHeaderField: "Content-Type") },
+            ["application/octet-stream", "application/octet-stream"]
+        )
+        // Carrier request type bytes: 0x02 metadata, 0x04 blind-rsa issue.
+        XCTAssertEqual(requests[0].body?.first, 0x02)
         let issueBody = try XCTUnwrap(requests[1].body)
-        let issueJSON = try JSONSerialization.jsonObject(with: issueBody) as? [String: Any]
-        XCTAssertEqual(issueJSON?["token_nonce"] as? String, tokenNonce.auroraHexString)
-        XCTAssertEqual(issueJSON?["redemption_context_hash"] as? String, redemptionContextHash.auroraHexString)
-        XCTAssertEqual(issueJSON?["expiry_unix"] as? Int, 1_800_000_000)
+        XCTAssertEqual(issueBody.first, 0x04)
+        let issuePayload = issueBody.dropFirst()
+        XCTAssertEqual(Data(issuePayload.prefix(32)), tokenNonce)
+        XCTAssertEqual(Data(issuePayload.dropFirst(32).prefix(48)), redemptionContextHash)
     }
 
     func testURLSessionIssuerClientSpendsAdmissionToken() async throws {
@@ -523,9 +528,9 @@ final class AuroraKitTests: XCTestCase {
         let spentKey = Data(repeating: 0x7b, count: 48)
         IssuerURLProtocol.setResponses([
             IssuerURLProtocol.Response(
-                path: "/issuer/token/spend",
-                contentType: "application/json",
-                body: #"{"spent":true,"spent_key":"\#(spentKey.auroraHexString)"}"#.data(using: .utf8)!
+                path: "/assets/app.bin",
+                contentType: "application/octet-stream",
+                body: CarrierFixture.spendResponse(spentKey)
             ),
         ])
 
@@ -536,13 +541,13 @@ final class AuroraKitTests: XCTestCase {
 
         let requests = IssuerURLProtocol.recordedRequests
         XCTAssertEqual(returnedSpentKey, spentKey)
-        XCTAssertEqual(requests.map { $0.request.url?.path }, ["/issuer/token/spend"])
+        XCTAssertEqual(requests.map { $0.request.url?.path }, ["/assets/app.bin"])
         XCTAssertEqual(requests[0].request.httpMethod, "POST")
-        XCTAssertEqual(requests[0].request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertEqual(requests[0].request.value(forHTTPHeaderField: "Content-Type"), "application/octet-stream")
         let spendBody = try XCTUnwrap(requests[0].body)
-        let spendJSON = try JSONSerialization.jsonObject(with: spendBody) as? [String: Any]
-        XCTAssertEqual(spendJSON?["admission_proof"] as? String, admissionProof.auroraHexString)
-        XCTAssertNil(spendJSON?["token_authenticator"])
+        // Carrier request type 0x06 token spend; payload is the opaque proof.
+        XCTAssertEqual(spendBody.first, 0x06)
+        XCTAssertEqual(Data(spendBody.dropFirst()), admissionProof)
     }
 
     func testControllerIssuesAdmissionTokenAndStoresItInWallet() async throws {
@@ -1977,6 +1982,30 @@ private final class PacketExchangeURLProtocol: URLProtocol, @unchecked Sendable 
             }
         }
         return data
+    }
+}
+
+// Builds cover-carrier server responses ([type][payload]) the way the portable
+// core encodes them, so the transport tests can exercise the real carrier codec.
+private enum CarrierFixture {
+    static func metadataResponse(metadata: Data, hash: Data) -> Data {
+        var out = Data([0x03])
+        let len = UInt32(metadata.count)
+        out.append(UInt8((len >> 24) & 0xff))
+        out.append(UInt8((len >> 16) & 0xff))
+        out.append(UInt8((len >> 8) & 0xff))
+        out.append(UInt8(len & 0xff))
+        out.append(metadata)
+        out.append(hash)
+        return out
+    }
+
+    static func issueResponse(_ admissionProof: Data) -> Data {
+        Data([0x05]) + admissionProof
+    }
+
+    static func spendResponse(_ spentKey: Data) -> Data {
+        Data([0x07]) + spentKey
     }
 }
 

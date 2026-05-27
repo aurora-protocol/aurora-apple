@@ -15,6 +15,7 @@
 		1D476DAA0BB105B69879EED1 /* AuroraRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */; };
 		22454227E5C44FC0DE29652F /* AuroraStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F36CC12D00ACADF86361E1 /* AuroraStatusView.swift */; };
 		3D2732712428594EA96C1619 /* AuroraPacketTunnelRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CB3DE75AB5028FB1A64FE /* AuroraPacketTunnelRuntime.swift */; };
+		3D9752B8B99538FF78FF7C12 /* AuroraCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2FA74ED98EF116E21C6922B3 /* AuroraCore.xcframework */; };
 		3EEF3C87016C1831AE79E785 /* AuroraKit_macOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D0D733810C55062FF37301F /* AuroraKit_macOS.framework */; };
 		43F2245BB154769893E25598 /* AuroraPacketTunnelRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CB3DE75AB5028FB1A64FE /* AuroraPacketTunnelRuntime.swift */; };
 		465EFAB81224D9A0DF360A21 /* AuroraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */; };
@@ -33,8 +34,10 @@
 		8F8420EA6160222A6EAE4254 /* AuroraTokenWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C571DE65AE541DF37702EB /* AuroraTokenWallet.swift */; };
 		906AAAB771CBB98386353322 /* AuroraConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */; };
 		98B3B84ABBFB6E375D98D25F /* AuroraTokenWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C571DE65AE541DF37702EB /* AuroraTokenWallet.swift */; };
+		9A41C03602D738B630697DE6 /* AuroraCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2FA74ED98EF116E21C6922B3 /* AuroraCore.xcframework */; };
 		B6B85CDDA1291747D680D9D9 /* AuroraIssuerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */; };
 		BBAFD654C92B664EC66813C4 /* AuroraIssuerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */; };
+		BDD39D98ABC94EE2CBEF7A92 /* AuroraCoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7544A77C23F5FB667C3CF91B /* AuroraCoreBridge.swift */; };
 		C5E59A21794A460372C7D8DD /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
 		CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */; };
 		CCA081E765150A4C5FEBFC75 /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
@@ -42,6 +45,7 @@
 		DFFF7D1592000271F0740723 /* AuroraClientController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */; };
 		E222736833D7224F1C5027BC /* AuroraPortableProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B688FFD2285608FACC39EEAF /* AuroraPortableProfileStore.swift */; };
 		E416114E84202364870CF8FF /* AuroraServerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */; };
+		E73483BA783B0F0D559F90EA /* AuroraCoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7544A77C23F5FB667C3CF91B /* AuroraCoreBridge.swift */; };
 		F398C96FB2AA206560021F08 /* AuroraRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */; };
 /* End PBXBuildFile section */
 
@@ -158,6 +162,7 @@
 		1E0F3643EC451ED6E21A8018 /* AuroraPacketTunnel_iOS.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AuroraPacketTunnel_iOS.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		23F6127B1927646AB2786F7E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraPacketTunnelConfiguration.swift; sourceTree = "<group>"; };
+		2FA74ED98EF116E21C6922B3 /* AuroraCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = AuroraCore.xcframework; path = Vendor/AuroraCore.xcframework; sourceTree = "<group>"; };
 		3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraServerClient.swift; sourceTree = "<group>"; };
 		3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraRedactor.swift; sourceTree = "<group>"; };
 		44A3FB58DED713406FD9E577 /* AuroraPacketTunnel-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "AuroraPacketTunnel-iOS.entitlements"; sourceTree = "<group>"; };
@@ -167,6 +172,7 @@
 		5E655A1A7022F9A9D8B35243 /* AuroraIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraIOSApp.swift; sourceTree = "<group>"; };
 		62F36CC12D00ACADF86361E1 /* AuroraStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraStatusView.swift; sourceTree = "<group>"; };
 		6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraClientController.swift; sourceTree = "<group>"; };
+		7544A77C23F5FB667C3CF91B /* AuroraCoreBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraCoreBridge.swift; sourceTree = "<group>"; };
 		771CB3DE75AB5028FB1A64FE /* AuroraPacketTunnelRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraPacketTunnelRuntime.swift; sourceTree = "<group>"; };
 		77559EA22FB4DB3601AE2E57 /* AuroraMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AuroraMac.entitlements; sourceTree = "<group>"; };
 		81A23FDA7A008D4DC3DD736E /* AuroraMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraMacApp.swift; sourceTree = "<group>"; };
@@ -223,6 +229,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E9CF3EE10AED8C0243672049 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9A41C03602D738B630697DE6 /* AuroraCore.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F4D3879E12B8B09A7843381F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3D9752B8B99538FF78FF7C12 /* AuroraCore.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F5DD0C078B239F298424E014 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -250,6 +272,7 @@
 			children = (
 				6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */,
 				15B636A6A47767EF1EFBD887 /* AuroraConfiguration.swift */,
+				7544A77C23F5FB667C3CF91B /* AuroraCoreBridge.swift */,
 				1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */,
 				2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */,
 				771CB3DE75AB5028FB1A64FE /* AuroraPacketTunnelRuntime.swift */,
@@ -284,6 +307,14 @@
 			path = SharedNetworkExtension;
 			sourceTree = "<group>";
 		};
+		AA9D6FB94B07FCD9B61638F9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				2FA74ED98EF116E21C6922B3 /* AuroraCore.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		ABEB0384177DAF4CB6B059B9 /* AuroraUI */ = {
 			isa = PBXGroup;
 			children = (
@@ -316,6 +347,7 @@
 				4F929F6D5DDE41C0FA62FFE3 /* iOS */,
 				2C61BA5363F9AB86067A49B1 /* macOS */,
 				7599BDC3C1299CC39DAB59DA /* SharedNetworkExtension */,
+				AA9D6FB94B07FCD9B61638F9 /* Frameworks */,
 				D6865F0542863BB6FBFD14F0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -328,6 +360,7 @@
 			buildConfigurationList = DE3BDE093A6156E57492FE22 /* Build configuration list for PBXNativeTarget "AuroraKit_macOS" */;
 			buildPhases = (
 				0270979A465E9310847BDD69 /* Sources */,
+				F4D3879E12B8B09A7843381F /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -427,6 +460,7 @@
 			buildConfigurationList = C3841466C2208BDEA82D942A /* Build configuration list for PBXNativeTarget "AuroraKit_iOS" */;
 			buildPhases = (
 				2485E16964C250A0102FB450 /* Sources */,
+				E9CF3EE10AED8C0243672049 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -521,6 +555,7 @@
 			files = (
 				65CE6DAD89B9A01064598C32 /* AuroraClientController.swift in Sources */,
 				906AAAB771CBB98386353322 /* AuroraConfiguration.swift in Sources */,
+				E73483BA783B0F0D559F90EA /* AuroraCoreBridge.swift in Sources */,
 				B6B85CDDA1291747D680D9D9 /* AuroraIssuerClient.swift in Sources */,
 				CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				3D2732712428594EA96C1619 /* AuroraPacketTunnelRuntime.swift in Sources */,
@@ -538,6 +573,7 @@
 			files = (
 				DFFF7D1592000271F0740723 /* AuroraClientController.swift in Sources */,
 				465EFAB81224D9A0DF360A21 /* AuroraConfiguration.swift in Sources */,
+				BDD39D98ABC94EE2CBEF7A92 /* AuroraCoreBridge.swift in Sources */,
 				BBAFD654C92B664EC66813C4 /* AuroraIssuerClient.swift in Sources */,
 				6342FD7E19ADB4AB19BC0706 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				43F2245BB154769893E25598 /* AuroraPacketTunnelRuntime.swift in Sources */,
@@ -884,12 +920,17 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = "-lresolv -framework Security -framework CoreFoundation";
 				PRODUCT_BUNDLE_IDENTIFIER = "org.aurora-protocol.aurora.kit.ios";
 				PRODUCT_MODULE_NAME = AuroraKit;
 				PRODUCT_NAME = AuroraKit;
@@ -909,12 +950,17 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = "-lresolv -framework Security -framework CoreFoundation";
 				PRODUCT_BUNDLE_IDENTIFIER = "org.aurora-protocol.aurora.kit.ios";
 				PRODUCT_MODULE_NAME = AuroraKit;
 				PRODUCT_NAME = AuroraKit;
@@ -935,12 +981,17 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				OTHER_LDFLAGS = "-lresolv -framework Security -framework CoreFoundation";
 				PRODUCT_BUNDLE_IDENTIFIER = "org.aurora-protocol.aurora.kit.macos";
 				PRODUCT_MODULE_NAME = AuroraKit;
 				PRODUCT_NAME = AuroraKit;
@@ -960,12 +1011,17 @@
 				DYLIB_COMPATIBILITY_VERSION = 1;
 				DYLIB_CURRENT_VERSION = 1;
 				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				OTHER_LDFLAGS = "-lresolv -framework Security -framework CoreFoundation";
 				PRODUCT_BUNDLE_IDENTIFIER = "org.aurora-protocol.aurora.kit.macos";
 				PRODUCT_MODULE_NAME = AuroraKit;
 				PRODUCT_NAME = AuroraKit;
