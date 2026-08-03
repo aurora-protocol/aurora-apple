@@ -19,9 +19,10 @@ jobs:
           repository: aurora-protocol/aurora-core
           path: aurora-core
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
-          go-version: stable
+          go-version-file: aurora-core/go.mod
+          cache-dependency-path: aurora-core/go.sum
       - name: Check Apple package and app targets
         working-directory: aurora-apple
         env:
