@@ -27,3 +27,5 @@ swift test \
 "$XCODEBUILD" -project AuroraApple.xcodeproj -scheme AuroraIOS -destination 'generic/platform=iOS Simulator' -derivedDataPath "$DERIVED_DATA_PATH" build CODE_SIGNING_ALLOWED=NO
 "$XCODEBUILD" -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_macOS -destination 'platform=macOS' -derivedDataPath "$DERIVED_DATA_PATH" build CODE_SIGNING_ALLOWED=NO
 "$XCODEBUILD" -project AuroraApple.xcodeproj -scheme AuroraPacketTunnel_iOS -destination 'generic/platform=iOS Simulator' -derivedDataPath "$DERIVED_DATA_PATH" build CODE_SIGNING_ALLOWED=NO
+
+DERIVED_DATA_PATH="$DERIVED_DATA_PATH" sh scripts/verify-app-bundles.sh

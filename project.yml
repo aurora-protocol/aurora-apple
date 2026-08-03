@@ -73,6 +73,8 @@ targets:
     sources:
       - path: Apps/iOS
     dependencies:
+      - target: AuroraKit_iOS
+        embed: true
       - target: AuroraUI_iOS
       - target: AuroraPacketTunnel_iOS
         embed: true
@@ -142,6 +144,8 @@ targets:
     sources:
       - path: Apps/macOS
     dependencies:
+      - target: AuroraKit_macOS
+        embed: true
       - target: AuroraUI_macOS
       - target: AuroraPacketTunnel_macOS
         embed: true
