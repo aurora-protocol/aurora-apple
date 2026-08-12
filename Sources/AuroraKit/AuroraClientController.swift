@@ -30,6 +30,7 @@ public final class AuroraClientController: ObservableObject {
     @Published public private(set) var tunnelState: AuroraTunnelLifecycleState = .disconnected
     @Published public private(set) var lastStatus: AuroraServerStatus?
     @Published public private(set) var redactedDiagnosticLine: String = ""
+    @Published public private(set) var hasNativeProvisioning = false
 
     public var configuration: AuroraConfiguration
     private let serverClient: any AuroraServerClient
@@ -38,6 +39,7 @@ public final class AuroraClientController: ObservableObject {
     private let issuerClient: any AuroraIssuerClient
     private let tokenWallet: AuroraTokenWallet
     private let tunnelManager: any AuroraTunnelManager
+    private let nativeProvisioningStore: AuroraNativeProvisioningStore
     private var lastIssuedToken: AuroraIssuedAdmissionToken?
 
     public init(
@@ -47,7 +49,8 @@ public final class AuroraClientController: ObservableObject {
         packetClient: any AuroraPacketExchangeClient = URLSessionAuroraServerClient(),
         issuerClient: any AuroraIssuerClient = URLSessionAuroraServerClient(),
         tokenWallet: AuroraTokenWallet = AuroraTokenWallet(),
-        tunnelManager: any AuroraTunnelManager = AuroraSystemTunnelManager()
+        tunnelManager: any AuroraTunnelManager = AuroraSystemTunnelManager(),
+        nativeProvisioningStore: AuroraNativeProvisioningStore = AuroraNativeProvisioningStore()
     ) {
         self.configuration = configuration
         self.serverClient = serverClient
@@ -56,6 +59,56 @@ public final class AuroraClientController: ObservableObject {
         self.issuerClient = issuerClient
         self.tokenWallet = tokenWallet
         self.tunnelManager = tunnelManager
+        self.nativeProvisioningStore = nativeProvisioningStore
+    }
+
+    @discardableResult
+    public func importNativeProvisioning(
+        _ provisioning: Data,
+        identifier: String = AuroraNativeProvisioningStore.defaultIdentifier
+    ) async -> Bool {
+        do {
+            try await nativeProvisioningStore.save(provisioning, identifier: identifier)
+            configuration.nativeProvisioningIdentifier = identifier
+            hasNativeProvisioning = true
+            resetServerDerivedState()
+            state = .idle
+            redactedDiagnosticLine = "native_provisioning=installed"
+            return true
+        } catch {
+            state = .unavailable("provisioning unavailable")
+            resetServerDerivedState()
+            redactedDiagnosticLine = "native_provisioning=unavailable"
+            return false
+        }
+    }
+
+    public func restoreNativeProvisioning() async {
+        let identifier = configuration.nativeProvisioningIdentifier ?? AuroraNativeProvisioningStore.defaultIdentifier
+        do {
+            let provisioning = try await nativeProvisioningStore.load(identifier: identifier)
+            hasNativeProvisioning = provisioning?.isEmpty == false
+            configuration.nativeProvisioningIdentifier = hasNativeProvisioning ? identifier : nil
+        } catch {
+            hasNativeProvisioning = false
+            configuration.nativeProvisioningIdentifier = nil
+            redactedDiagnosticLine = "native_provisioning=unavailable"
+        }
+    }
+
+    public func removeNativeProvisioning() async {
+        let identifier = configuration.nativeProvisioningIdentifier ?? AuroraNativeProvisioningStore.defaultIdentifier
+        do {
+            try await nativeProvisioningStore.delete(identifier: identifier)
+            hasNativeProvisioning = false
+            configuration.nativeProvisioningIdentifier = nil
+            resetServerDerivedState()
+            state = .idle
+            redactedDiagnosticLine = "native_provisioning=removed"
+        } catch {
+            state = .unavailable("provisioning unavailable")
+            redactedDiagnosticLine = "native_provisioning=unavailable"
+        }
     }
 
     @discardableResult
@@ -229,6 +282,15 @@ public final class AuroraClientController: ObservableObject {
     }
 
     public func connectTunnel() async {
+        if hasNativeProvisioning, configuration.nativeProvisioningIdentifier != nil {
+            await installTunnel()
+            guard case .installed = tunnelState else {
+                return
+            }
+            await startTunnel()
+            return
+        }
+
         await refreshStatus()
         guard case .ready = state else {
             return
@@ -284,7 +346,10 @@ public final class AuroraClientController: ObservableObject {
             return false
         }
 
-        let nextConfiguration = profile.configuration(defaultEndpoint: configuration.endpoint)
+        var nextConfiguration = profile.configuration(defaultEndpoint: configuration.endpoint)
+        if hasNativeProvisioning {
+            nextConfiguration.nativeProvisioningIdentifier = configuration.nativeProvisioningIdentifier
+        }
         if persist {
             guard persistPortableProfile(profile) else {
                 return false

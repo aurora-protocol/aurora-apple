@@ -1,11 +1,13 @@
 import AuroraKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct AuroraStatusView: View {
     @ObservedObject private var controller: AuroraClientController
     @State private var endpointText: String
     @State private var profileText: String
     @State private var didLoadStoredProfile = false
+    @State private var isNativeProvisioningImporterPresented = false
 
     public init(controller: AuroraClientController) {
         self.controller = controller
@@ -24,6 +26,7 @@ public struct AuroraStatusView: View {
                     LabeledContent("Credential", value: credentialText)
                     LabeledContent("Packet", value: packetExchangeText)
                     LabeledContent("Tunnel", value: tunnelStateText)
+                    LabeledContent("Provisioning", value: controller.hasNativeProvisioning ? "installed" : "none")
                 }
 
                 Section {
@@ -82,6 +85,22 @@ public struct AuroraStatusView: View {
                     .disabled(isTunnelBusy)
                 }
 
+                Section {
+                    Button {
+                        isNativeProvisioningImporterPresented = true
+                    } label: {
+                        Label("Import Provisioning", systemImage: "folder.badge.plus")
+                    }
+
+                    if controller.hasNativeProvisioning {
+                        Button(role: .destructive) {
+                            Task { await controller.removeNativeProvisioning() }
+                        } label: {
+                            Label("Remove Provisioning", systemImage: "trash")
+                        }
+                    }
+                }
+
                 if let status = controller.lastStatus {
                     Section {
                         LabeledContent("Ready", value: status.ready ? "yes" : "no")
@@ -122,8 +141,15 @@ public struct AuroraStatusView: View {
                     }
                 }
             }
+            .fileImporter(
+                isPresented: $isNativeProvisioningImporterPresented,
+                allowedContentTypes: [.data],
+                allowsMultipleSelection: false,
+                onCompletion: importNativeProvisioning
+            )
             .navigationTitle("Aurora")
             .task {
+                await controller.restoreNativeProvisioning()
                 loadStoredProfileIfNeeded()
             }
         }
@@ -227,5 +253,36 @@ public struct AuroraStatusView: View {
             endpointText = controller.configuration.endpoint.absoluteString
             profileText = controller.exportPortableProfile()
         }
+    }
+
+    private func importNativeProvisioning(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result else {
+            return
+        }
+        guard
+              let url = urls.first,
+              let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let fileSize = values.fileSize,
+              fileSize > 0,
+              fileSize <= AuroraNativeProvisioningStore.maximumBytes
+        else {
+            Task { _ = await controller.importNativeProvisioning(Data()) }
+            return
+        }
+        let accessedSecurityScope = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessedSecurityScope {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        guard let provisioning = try? Data(contentsOf: url, options: .mappedIfSafe) else {
+            Task { _ = await controller.importNativeProvisioning(Data()) }
+            return
+        }
+        guard provisioning.count <= AuroraNativeProvisioningStore.maximumBytes else {
+            Task { _ = await controller.importNativeProvisioning(Data()) }
+            return
+        }
+        Task { _ = await controller.importNativeProvisioning(provisioning) }
     }
 }

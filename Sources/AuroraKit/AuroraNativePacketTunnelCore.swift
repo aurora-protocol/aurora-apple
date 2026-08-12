@@ -49,6 +49,7 @@ final class AuroraNoRedirectSessionDelegate: NSObject, URLSessionTaskDelegate, @
 public actor AuroraNativeProvisioningStore {
     public static let service = "org.aurora-protocol.aurora.native-provisioning"
     public static let defaultIdentifier = "active"
+    public static let maximumBytes = 1 << 20
 
     private let credentialStore: any AuroraSecureCredentialStore
 
@@ -59,7 +60,7 @@ public actor AuroraNativeProvisioningStore {
     public func save(_ provisioning: Data, identifier: String = defaultIdentifier) async throws {
         guard Self.isValidIdentifier(identifier),
               !provisioning.isEmpty,
-              provisioning.count <= 1 << 20
+              provisioning.count <= Self.maximumBytes
         else {
             throw AuroraNativeTunnelError.invalidProvisioning
         }
