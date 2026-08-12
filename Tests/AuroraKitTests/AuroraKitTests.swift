@@ -172,6 +172,61 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertFalse(savedProfile.contains("hint_secret"))
     }
 
+    func testControllerImportsNativeProvisioningIntoSecureStoreWithoutExportingIt() async throws {
+        let credentialStore = MockSecureCredentialStore()
+        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore)
+        let profileStore = MockPortableProfileStore()
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            profileStore: profileStore,
+            nativeProvisioningStore: provisioningStore
+        )
+        let provisioning = Data(repeating: 0xa7, count: 64)
+
+        let imported = await controller.importNativeProvisioning(provisioning)
+        let rejected = await controller.importNativeProvisioning(Data())
+
+        let configuration = await controller.configuration
+        let hasNativeProvisioning = await controller.hasNativeProvisioning
+        let stored = await credentialStore.savedData(
+            service: AuroraNativeProvisioningStore.service,
+            account: AuroraNativeProvisioningStore.account(identifier: AuroraNativeProvisioningStore.defaultIdentifier)
+        )
+        let exported = await controller.exportPortableProfile()
+        XCTAssertTrue(imported)
+        XCTAssertFalse(rejected)
+        XCTAssertEqual(configuration.nativeProvisioningIdentifier, AuroraNativeProvisioningStore.defaultIdentifier)
+        XCTAssertTrue(hasNativeProvisioning)
+        XCTAssertEqual(stored, provisioning)
+        XCTAssertFalse(exported.contains("nativeProvisioningIdentifier"))
+        XCTAssertFalse(exported.contains(provisioning.base64EncodedString()))
+    }
+
+    func testControllerRestoresAndRemovesNativeProvisioning() async throws {
+        let credentialStore = MockSecureCredentialStore()
+        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore)
+        let provisioning = Data(repeating: 0xb8, count: 64)
+        try await provisioningStore.save(provisioning)
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            nativeProvisioningStore: provisioningStore
+        )
+
+        await controller.restoreNativeProvisioning()
+        let restored = await controller.configuration.nativeProvisioningIdentifier
+        let availableAfterRestore = await controller.hasNativeProvisioning
+
+        await controller.removeNativeProvisioning()
+        let removed = await controller.configuration.nativeProvisioningIdentifier
+        let availableAfterRemoval = await controller.hasNativeProvisioning
+        let stored = try await provisioningStore.load()
+        XCTAssertEqual(restored, AuroraNativeProvisioningStore.defaultIdentifier)
+        XCTAssertTrue(availableAfterRestore)
+        XCTAssertNil(removed)
+        XCTAssertFalse(availableAfterRemoval)
+        XCTAssertNil(stored)
+    }
+
     func testEndpointValidationRejectsRemotePlainHTTPButAllowsLoopback() {
         XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "http://relay.example:9443"))
         XCTAssertNil(AuroraConfiguration.validatedEndpoint(from: "http://203.0.113.7:9443"))
@@ -1589,6 +1644,44 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(tunnelState, .connected)
     }
 
+    func testControllerConnectsNativeProvisioningWithoutLegacyServerChecks() async throws {
+        let credentialStore = MockSecureCredentialStore()
+        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore)
+        try await provisioningStore.save(Data(repeating: 0xd2, count: 64))
+        let tunnelManager = MockTunnelManager()
+        let packetClient = MockPacketExchangeClient(error: AuroraClientError.unavailable)
+        let issuerClient = MockIssuerClient(error: AuroraClientError.unavailable)
+        let controller = await AuroraClientController(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            serverClient: FailingServerClient(),
+            packetClient: packetClient,
+            issuerClient: issuerClient,
+            tunnelManager: tunnelManager,
+            nativeProvisioningStore: provisioningStore
+        )
+
+        await controller.restoreNativeProvisioning()
+        await controller.connectTunnel()
+
+        let events = await tunnelManager.events
+        let packetEndpoint = await packetClient.requestedEndpoint
+        let issuerEndpoint = await issuerClient.requestedEndpoint
+        let state = await controller.state
+        let credentialState = await controller.credentialState
+        let packetState = await controller.packetExchangeState
+        let tunnelState = await controller.tunnelState
+        XCTAssertEqual(events, [
+            .install(endpoint: "https://relay.example:9443", routePolicy: "balanced"),
+            .start,
+        ])
+        XCTAssertNil(packetEndpoint)
+        XCTAssertNil(issuerEndpoint)
+        XCTAssertEqual(state, .idle)
+        XCTAssertEqual(credentialState, .idle)
+        XCTAssertEqual(packetState, .idle)
+        XCTAssertEqual(tunnelState, .connected)
+    }
+
     func testControllerConnectTunnelStopsBeforePacketExchangeWhenIssuerFails() async {
         let tunnelManager = MockTunnelManager()
         let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
@@ -1779,6 +1872,22 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(view.contains("loadStoredPortableProfile"), "status view does not load stored portable profiles")
     }
 
+    func testSharedUIExposesBoundedNativeProvisioningEnrollment() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let view = try String(
+            contentsOf: root.appendingPathComponent("Sources/AuroraUI/AuroraStatusView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(view.contains("fileImporter"), "status view missing provisioning file importer")
+        XCTAssertTrue(view.contains("Import Provisioning"), "status view missing provisioning import action")
+        XCTAssertTrue(view.contains("Remove Provisioning"), "status view missing provisioning removal action")
+        XCTAssertTrue(view.contains("importNativeProvisioning"), "status view does not import provisioning through the controller")
+        XCTAssertTrue(view.contains("restoreNativeProvisioning"), "status view does not restore provisioning on launch")
+        XCTAssertTrue(view.contains("removeNativeProvisioning"), "status view does not remove provisioning through the controller")
+        XCTAssertTrue(view.contains("maximumBytes"), "status view must bound provisioning file input before loading it")
+    }
+
     func testSharedUIExposesRedactedDiagnostics() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let view = try String(
@@ -1883,6 +1992,12 @@ private struct MockServerClient: AuroraServerClient {
 
     func fetchStatus(endpoint: URL) async throws -> AuroraServerStatus {
         status
+    }
+}
+
+private struct FailingServerClient: AuroraServerClient {
+    func fetchStatus(endpoint: URL) async throws -> AuroraServerStatus {
+        throw AuroraClientError.unavailable
     }
 }
 
