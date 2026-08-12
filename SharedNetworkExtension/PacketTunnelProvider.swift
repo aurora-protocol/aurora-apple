@@ -22,10 +22,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         let serverClient = serverClient
         let packetFlow = NetworkExtensionPacketFlow(packetFlow: packetFlow)
         let pathObserver = pathObserver
+        let core: any AuroraPacketTunnelCore
+        if configuration.nativeProvisioningIdentifier != nil {
+            core = AuroraNativePacketTunnelCore()
+        } else {
+            core = AuroraServerBackedPacketTunnelCore(serverClient: serverClient)
+        }
         let runtime = AuroraPacketTunnelRuntime(
             configuration: configuration,
             packetFlow: packetFlow,
-            core: AuroraServerBackedPacketTunnelCore(serverClient: serverClient)
+            core: core
         )
         self.runtime = runtime
 
@@ -33,6 +39,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             do {
                 try await runtime.start()
                 try await applyTunnelNetworkSettings(networkSettings(for: tunnelConfiguration))
+                await runtime.activatePacketFlow()
                 pathObserver.start { change in
                     Task {
                         await runtime.notifyNetworkPathChange(change)
