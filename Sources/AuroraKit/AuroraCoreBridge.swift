@@ -20,6 +20,11 @@ enum AuroraCore {
         case decodeIssueResponse = 5
         case decodeSpendResponse = 6
         case parseAdmissionProof = 7
+        case beginNativeSession = 16
+        case completeNativeSession = 17
+        case closeNativeSession = 10
+        case ingressLocalPacket = 18
+        case nextLocalPacket = 15
     }
 
     private enum Status: UInt8 {
@@ -48,6 +53,48 @@ enum AuroraCore {
     struct MetadataEnvelope: Equatable {
         var issuerMetadata: Data
         var issuerMetadataHash: Data
+    }
+
+    struct NativeIssuerWork: Decodable, Equatable, Sendable {
+        var handle: UInt64
+        var issuerURL: URL
+        var issuerCarrierPath: String
+        var requestBody: Data
+
+        enum CodingKeys: String, CodingKey {
+            case handle
+            case issuerURL = "issuer_url"
+            case issuerCarrierPath = "issuer_carrier_path"
+            case requestBodyBase64 = "request_body_base64"
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            handle = try container.decode(UInt64.self, forKey: .handle)
+            issuerURL = try container.decode(URL.self, forKey: .issuerURL)
+            issuerCarrierPath = try container.decode(String.self, forKey: .issuerCarrierPath)
+            let body = try container.decode(String.self, forKey: .requestBodyBase64)
+            guard handle != 0,
+                  issuerURL.scheme?.lowercased() == "https",
+                  issuerURL.user == nil,
+                  issuerURL.password == nil,
+                  !issuerCarrierPath.isEmpty,
+                  issuerCarrierPath.hasPrefix("/"),
+                  let requestBody = Data(base64Encoded: body),
+                  !requestBody.isEmpty
+            else {
+                throw DecodingError.dataCorruptedError(forKey: .handle, in: container, debugDescription: "invalid native issuer work")
+            }
+            self.requestBody = requestBody
+        }
+    }
+
+    private struct NativeLocalPackets: Decodable {
+        var packetsBase64: [String]
+
+        enum CodingKeys: String, CodingKey {
+            case packetsBase64 = "packets_base64"
+        }
     }
 
     // MARK: - Public operations
@@ -110,12 +157,70 @@ enum AuroraCore {
         )
     }
 
+    static func beginNativeSession(provisioning: Data) -> AuroraNativeIssuerWork? {
+        guard !provisioning.isEmpty,
+              let payload = okPayload(call(.beginNativeSession, input: provisioning)),
+              let work = try? JSONDecoder().decode(NativeIssuerWork.self, from: payload)
+        else {
+            return nil
+        }
+        return AuroraNativeIssuerWork(
+            handle: work.handle,
+            issuerURL: work.issuerURL,
+            issuerCarrierPath: work.issuerCarrierPath,
+            requestBody: work.requestBody
+        )
+    }
+
+    static func completeNativeSession(handle: UInt64, issuerResponse: Data) -> Bool {
+        guard handle != 0, !issuerResponse.isEmpty else {
+            return false
+        }
+        return okPayload(call(.completeNativeSession, input: issuerResponse, arg: handle)) != nil
+    }
+
+    static func closeNativeSession(handle: UInt64) -> Bool {
+        guard handle != 0 else {
+            return false
+        }
+        return okPayload(call(.closeNativeSession, arg: handle)) != nil
+    }
+
+    static func ingressLocalPacket(handle: UInt64, packet: Data) -> [Data]? {
+        guard handle != 0,
+              !packet.isEmpty,
+              let payload = okPayload(call(.ingressLocalPacket, input: packet, arg: handle))
+        else {
+            return nil
+        }
+        guard let encoded = try? JSONDecoder().decode(NativeLocalPackets.self, from: payload),
+              encoded.packetsBase64.count <= 64
+        else {
+            return nil
+        }
+        let packets = encoded.packetsBase64.compactMap { Data(base64Encoded: $0) }
+        guard packets.count == encoded.packetsBase64.count,
+              packets.allSatisfy({ !$0.isEmpty && $0.count <= 65_535 })
+        else {
+            return nil
+        }
+        return packets
+    }
+
+    static func nextLocalPacket(handle: UInt64) -> Data? {
+        guard handle != 0 else {
+            return nil
+        }
+        return okPayload(call(.nextLocalPacket, arg: handle))
+    }
+
     // MARK: - ABI plumbing
 
     private static func okPayload(_ result: Result?) -> Data? {
         guard let result, result.status == .ok else { return nil }
         return result.payload
     }
+
 
     private static func call(_ op: Op, input: Data = Data(), arg: UInt64 = 0) -> Result? {
         var outLen: Int32 = 0

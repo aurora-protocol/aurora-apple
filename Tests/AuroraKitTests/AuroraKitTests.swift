@@ -736,6 +736,141 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(configuration.routePolicy, "balanced")
     }
 
+    func testTunnelProfileCarriesOnlyNativeProvisioningKeychainReference() throws {
+        let identifier = "production-slot"
+        let profile = AuroraTunnelProfile(
+            configuration: AuroraConfiguration(
+                endpoint: URL(string: "https://relay.example:9443")!,
+                nativeProvisioningIdentifier: identifier
+            ),
+            providerBundleIdentifier: "org.aurora-protocol.aurora.ios.packet-tunnel"
+        )
+
+        XCTAssertEqual(profile.providerConfiguration[AuroraTunnelProfile.nativeProvisioningIdentifierKey], identifier)
+        XCTAssertFalse(profile.providerConfiguration.values.contains { $0.contains("access_hint") })
+        let configuration = try XCTUnwrap(AuroraTunnelProfile.configuration(from: profile.providerConfiguration))
+        XCTAssertEqual(configuration.nativeProvisioningIdentifier, identifier)
+    }
+
+    func testNativeProvisioningStoreKeepsOpaqueBundleInCredentialStore() async throws {
+        let credentialStore = MockSecureCredentialStore()
+        let store = AuroraNativeProvisioningStore(credentialStore: credentialStore)
+        let provisioning = Data(repeating: 0x7a, count: 64)
+
+        try await store.save(provisioning, identifier: "production-slot")
+
+        let loaded = try await store.load(identifier: "production-slot")
+        let stored = await credentialStore.savedData(
+            service: AuroraNativeProvisioningStore.service,
+            account: AuroraNativeProvisioningStore.account(identifier: "production-slot")
+        )
+        XCTAssertEqual(loaded, provisioning)
+        XCTAssertEqual(
+            stored,
+            provisioning
+        )
+    }
+
+    func testNativePacketTunnelCoreUsesOpaqueCoreSessionAndIssuerTransport() async throws {
+        let credentialStore = MockSecureCredentialStore()
+        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore)
+        let provisioning = Data(repeating: 0x6b, count: 64)
+        try await provisioningStore.save(provisioning, identifier: "production-slot")
+        let driver = MockNativeSessionDriver(
+            work: AuroraNativeIssuerWork(
+                handle: 41,
+                issuerURL: URL(string: "https://issuer.example")!,
+                issuerCarrierPath: "/assets/issue/41",
+                requestBody: Data([0x01, 0x02, 0x03])
+            ),
+            ingressPackets: [Data([0x45, 0x00, 0x00, 0x14])],
+            nextPacket: Data([0x60, 0x00, 0x00, 0x00])
+        )
+        let issuer = MockNativeIssuerTransport(response: Data([0xaa, 0xbb]))
+        let core = AuroraNativePacketTunnelCore(
+            provisioningStore: provisioningStore,
+            sessionDriver: driver,
+            issuerTransport: issuer
+        )
+        let configuration = AuroraConfiguration(
+            endpoint: URL(string: "https://relay.example:9443")!,
+            nativeProvisioningIdentifier: "production-slot"
+        )
+
+        try await core.connect(configuration: configuration)
+        let immediate = try await core.ingestPacketBatch(AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        ))
+        let remote = try await core.nextOutboundPacketBatch()
+        await core.close()
+
+        let beginProvisioning = await driver.beginProvisioning
+        let completedHandle = await driver.completedHandle
+        let completedResponse = await driver.completedResponse
+        let ingressPackets = await driver.ingressPackets
+        let closedHandles = await driver.closedHandles
+        let requestedURL = await issuer.requestedURL
+        let requestedBody = await issuer.requestedBody
+        XCTAssertEqual(beginProvisioning, provisioning)
+        XCTAssertEqual(completedHandle, 41)
+        XCTAssertEqual(completedResponse, Data([0xaa, 0xbb]))
+        XCTAssertEqual(ingressPackets, [Data([0x45, 0x00, 0x00, 0x14])])
+        XCTAssertEqual(closedHandles, [41])
+        XCTAssertEqual(requestedURL?.path, "/assets/issue/41")
+        XCTAssertEqual(requestedBody, Data([0x01, 0x02, 0x03]))
+        XCTAssertEqual(immediate.protocolNumbers, [2])
+        XCTAssertEqual(remote.protocolNumbers, [30])
+    }
+
+    func testNativeIssuerRedirectDelegateRejectsRedirects() {
+        let sourceURL = URL(string: "https://issuer.example/assets/issue/41")!
+        let redirectedURL = URL(string: "https://redirect.example/assets/issue/41")!
+        let session = URLSession(configuration: .ephemeral)
+        let task = session.dataTask(with: sourceURL)
+        let response = HTTPURLResponse(
+            url: sourceURL,
+            statusCode: 307,
+            httpVersion: nil,
+            headerFields: ["Location": redirectedURL.absoluteString]
+        )!
+        let decision = NativeIssuerRedirectDecision()
+
+        AuroraNoRedirectSessionDelegate().urlSession(
+            session,
+            task: task,
+            willPerformHTTPRedirection: response,
+            newRequest: URLRequest(url: redirectedURL)
+        ) { request in
+            decision.set(request)
+        }
+
+        XCTAssertNil(decision.value)
+    }
+
+    func testNativeIssuerTransportRejectsOversizedResponseBeforeCoreCompletion() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [IssuerURLProtocol.self]
+        let transport = URLSessionAuroraNativeIssuerTransport(configuration: configuration)
+        IssuerURLProtocol.setResponses([
+            IssuerURLProtocol.Response(
+                path: "/assets/issue/41",
+                contentType: "application/octet-stream",
+                body: Data(repeating: 0xa1, count: (1 << 20) + 1)
+            ),
+        ])
+
+        do {
+            _ = try await transport.postIssuerWork(
+                url: URL(string: "https://issuer.example/assets/issue/41")!,
+                body: Data([0x01, 0x02, 0x03])
+            )
+            XCTFail("oversized native issuer response unexpectedly succeeded")
+        } catch {
+            XCTAssertNotNil(error)
+        }
+    }
+
     func testTunnelProfileRejectsInvalidProviderConfigurationEndpoint() throws {
         XCTAssertNil(AuroraTunnelProfile.configuration(from: [
             "endpoint": "not a server",
@@ -1023,6 +1158,52 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(ingestedPackets, [Data([0x45, 0x00, 0x00, 0x14])])
         XCTAssertEqual(writtenBatches.map(\.packets), [[Data([0x45, 0x00, 0x00, 0x15])]])
         XCTAssertEqual(writtenBatches.map(\.protocolNumbers), [[2]])
+    }
+
+    func testPacketTunnelRuntimeWritesNativeCoreOutputWithoutLocalIngress() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockStreamingPacketTunnelCore(output: AuroraPacketFlowBatch(
+            packets: [Data([0x60, 0x00, 0x00, 0x00])],
+            protocolNumbers: [30]
+        ))
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        await runtime.activatePacketFlow()
+        for _ in 0..<20 {
+            if !(await packetFlow.writtenBatches).isEmpty {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let written = await packetFlow.writtenBatches
+        await runtime.stop()
+
+        XCTAssertEqual(written.map(\.protocolNumbers), [[30]])
+    }
+
+    func testPacketTunnelRuntimeDefersNativeOutputUntilPacketFlowActivation() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockStreamingPacketTunnelCore(output: AuroraPacketFlowBatch(
+            packets: [Data([0x60, 0x00, 0x00, 0x00])],
+            protocolNumbers: [30]
+        ))
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let written = await packetFlow.writtenBatches
+        await runtime.stop()
+
+        XCTAssertTrue(written.isEmpty)
     }
 
     func testPacketTunnelRuntimeDropsOutboundBatchWithMismatchedProtocolFamily() async throws {
@@ -1865,6 +2046,23 @@ private final class IssuerURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
+private final class NativeIssuerRedirectDecision: @unchecked Sendable {
+    private let lock = NSLock()
+    private var request: URLRequest?
+
+    func set(_ request: URLRequest?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.request = request
+    }
+
+    var value: URLRequest? {
+        lock.lock()
+        defer { lock.unlock() }
+        return request
+    }
+}
+
 private actor MockPacketExchangeClient: AuroraPacketExchangeClient {
     private let outboundBatch: AuroraPacketFlowBatch?
     private let error: (any Error)?
@@ -1888,6 +2086,68 @@ private actor MockPacketExchangeClient: AuroraPacketExchangeClient {
             throw error
         }
         return outboundBatch ?? AuroraPacketFlowBatch(packets: [], protocolNumbers: [])
+    }
+}
+
+private actor MockNativeSessionDriver: AuroraNativeSessionDriver {
+    private let work: AuroraNativeIssuerWork
+    private let responses: [Data]
+    private let remotePacket: Data
+    private(set) var beginProvisioning: Data?
+    private(set) var completedHandle: UInt64?
+    private(set) var completedResponse: Data?
+    private(set) var ingressPackets: [Data] = []
+    private(set) var closedHandles: [UInt64] = []
+
+    init(work: AuroraNativeIssuerWork, ingressPackets: [Data], nextPacket: Data) {
+        self.work = work
+        responses = ingressPackets
+        remotePacket = nextPacket
+    }
+
+    func begin(provisioning: Data) async throws -> AuroraNativeIssuerWork {
+        beginProvisioning = provisioning
+        return work
+    }
+
+    func complete(handle: UInt64, issuerResponse: Data) async throws {
+        completedHandle = handle
+        completedResponse = issuerResponse
+    }
+
+    func ingress(handle: UInt64, packet: Data) async throws -> [Data] {
+        guard handle == work.handle else {
+            throw AuroraNativeTunnelError.coreOperationFailed
+        }
+        ingressPackets.append(packet)
+        return responses
+    }
+
+    func nextLocalPacket(handle: UInt64) async throws -> Data {
+        guard handle == work.handle else {
+            throw AuroraNativeTunnelError.coreOperationFailed
+        }
+        return remotePacket
+    }
+
+    func close(handle: UInt64) async {
+        closedHandles.append(handle)
+    }
+}
+
+private actor MockNativeIssuerTransport: AuroraNativeIssuerTransport {
+    private let response: Data
+    private(set) var requestedURL: URL?
+    private(set) var requestedBody: Data?
+
+    init(response: Data) {
+        self.response = response
+    }
+
+    func postIssuerWork(url: URL, body: Data) async throws -> Data {
+        requestedURL = url
+        requestedBody = body
+        return response
     }
 }
 
@@ -2186,4 +2446,35 @@ private actor MockPacketTunnelCore: AuroraPacketTunnelCore {
     func close() async {
         closed = true
     }
+}
+
+private actor MockStreamingPacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketTunnelOutputCore {
+    private let output: AuroraPacketFlowBatch
+    private var sentOutput = false
+
+    init(output: AuroraPacketFlowBatch) {
+        self.output = output
+    }
+
+    func connect(configuration: AuroraConfiguration) async throws {}
+
+    func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        AuroraPacketFlowBatch(packets: [], protocolNumbers: [])
+    }
+
+    func nextOutboundPacketBatch() async throws -> AuroraPacketFlowBatch {
+        guard !sentOutput else {
+            throw AuroraNativeTunnelError.unavailable
+        }
+        sentOutput = true
+        return output
+    }
+
+    func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {}
+
+    func submitDNSMessage(_ message: AuroraDNSMessage) async throws {}
+
+    func submitSocketEvent(_ event: AuroraSocketEvent) async throws {}
+
+    func close() async {}
 }

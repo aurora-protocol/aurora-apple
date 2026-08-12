@@ -39,6 +39,7 @@ public protocol AuroraTunnelManager: Sendable {
 public struct AuroraTunnelProfile {
     public static let endpointKey = "endpoint"
     public static let routePolicyKey = "routePolicy"
+    public static let nativeProvisioningIdentifierKey = "nativeProvisioningIdentifier"
 
     public var localizedDescription: String
     public var providerBundleIdentifier: String
@@ -57,6 +58,10 @@ public struct AuroraTunnelProfile {
             Self.endpointKey: configuration.endpoint.absoluteString,
             Self.routePolicyKey: configuration.routePolicy,
         ]
+        if let identifier = configuration.nativeProvisioningIdentifier,
+           AuroraNativeProvisioningStore.isValidIdentifier(identifier) {
+            self.providerConfiguration[Self.nativeProvisioningIdentifierKey] = identifier
+        }
     }
 
     public static func configuration(from providerConfiguration: [String: Any]?) -> AuroraConfiguration? {
@@ -66,7 +71,14 @@ public struct AuroraTunnelProfile {
             return nil
         }
         let routePolicy = providerConfiguration?[routePolicyKey] as? String ?? "balanced"
-        return AuroraConfiguration(endpoint: endpoint, routePolicy: routePolicy)
+        let identifier = providerConfiguration?[nativeProvisioningIdentifierKey] as? String
+        return AuroraConfiguration(
+            endpoint: endpoint,
+            routePolicy: routePolicy,
+            nativeProvisioningIdentifier: identifier.flatMap {
+                AuroraNativeProvisioningStore.isValidIdentifier($0) ? $0 : nil
+            }
+        )
     }
 }
 

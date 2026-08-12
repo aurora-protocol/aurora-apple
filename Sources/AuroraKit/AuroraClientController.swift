@@ -65,7 +65,11 @@ public final class AuroraClientController: ObservableObject {
             resetServerDerivedState()
             return false
         }
-        let nextConfiguration = AuroraConfiguration(endpoint: endpoint, routePolicy: configuration.routePolicy)
+        let nextConfiguration = AuroraConfiguration(
+            endpoint: endpoint,
+            routePolicy: configuration.routePolicy,
+            nativeProvisioningIdentifier: configuration.nativeProvisioningIdentifier
+        )
         let profile = AuroraPortableProfile(
             configuration: nextConfiguration,
             route: "auto",

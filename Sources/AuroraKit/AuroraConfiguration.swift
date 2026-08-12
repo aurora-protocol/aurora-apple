@@ -3,10 +3,16 @@ import Foundation
 public struct AuroraConfiguration: Equatable, Sendable {
     public var endpoint: URL
     public var routePolicy: String
+    public var nativeProvisioningIdentifier: String?
 
-    public init(endpoint: URL, routePolicy: String = "balanced") {
+    public init(
+        endpoint: URL,
+        routePolicy: String = "balanced",
+        nativeProvisioningIdentifier: String? = nil
+    ) {
         self.endpoint = endpoint
         self.routePolicy = routePolicy
+        self.nativeProvisioningIdentifier = nativeProvisioningIdentifier
     }
 
     public static func validatedEndpoint(from input: String) -> URL? {

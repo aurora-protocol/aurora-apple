@@ -200,6 +200,7 @@ public actor AuroraPacketTunnelRuntime {
     private var running = false
     private var connected = false
     private var coreClosed = false
+    private var outputTask: Task<Void, Never>?
 
     public init(
         configuration: AuroraConfiguration,
@@ -218,6 +219,13 @@ public actor AuroraPacketTunnelRuntime {
         running = true
     }
 
+    public func activatePacketFlow() {
+        guard running, outputTask == nil else {
+            return
+        }
+        startOutputPumpIfSupported()
+    }
+
     @discardableResult
     public func processNextBatch() async throws -> Bool {
         guard running, let inbound = await packetFlow.readPacketBatch() else {
@@ -234,6 +242,7 @@ public actor AuroraPacketTunnelRuntime {
     }
 
     public func runUntilStopped() async {
+        activatePacketFlow()
         while running {
             do {
                 let processed = try await processNextBatch()
@@ -261,6 +270,8 @@ public actor AuroraPacketTunnelRuntime {
 
     public func stop() async {
         running = false
+        outputTask?.cancel()
+        outputTask = nil
         await closeCore()
     }
 
@@ -278,6 +289,34 @@ public actor AuroraPacketTunnelRuntime {
         coreClosed = true
         connected = false
         await core.close()
+    }
+
+    private func startOutputPumpIfSupported() {
+        guard let outputCore = core as? any AuroraPacketTunnelOutputCore else {
+            return
+        }
+        outputTask?.cancel()
+        outputTask = Task { [weak self, outputCore] in
+            await self?.pumpOutboundPackets(from: outputCore)
+        }
+    }
+
+    private func pumpOutboundPackets(from outputCore: any AuroraPacketTunnelOutputCore) async {
+        while running, !Task.isCancelled {
+            do {
+                let outbound = try await outputCore.nextOutboundPacketBatch()
+                if !outbound.isEmpty, Self.canWriteToPacketFlow(outbound) {
+                    _ = await packetFlow.writePacketBatch(outbound)
+                }
+            } catch {
+                guard running else {
+                    return
+                }
+                running = false
+                await closeCore()
+                return
+            }
+        }
     }
 
     private static func canWriteToPacketFlow(_ batch: AuroraPacketFlowBatch) -> Bool {
