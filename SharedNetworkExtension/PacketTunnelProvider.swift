@@ -11,6 +11,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         )
     )
     private let serverClient = URLSessionAuroraServerClient()
+    private let endpointResolver = AuroraTunnelEndpointResolver()
     private let pathObserver = NetworkPathObserver()
     private var runtime: AuroraPacketTunnelRuntime?
     private var runtimeTask: Task<Void, Never>?
@@ -18,7 +19,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let completion = StartTunnelCompletion(completionHandler)
         let configuration = resolvedConfiguration()
-        let tunnelConfiguration = AuroraPacketTunnelConfiguration(configuration: configuration)
         let serverClient = serverClient
         let packetFlow = NetworkExtensionPacketFlow(packetFlow: packetFlow)
         let pathObserver = pathObserver
@@ -37,6 +37,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
         runtimeTask = Task {
             do {
+                let tunnelConfiguration = try await endpointResolver.resolve(
+                    AuroraPacketTunnelConfiguration(configuration: configuration)
+                )
                 try await runtime.start()
                 try await applyTunnelNetworkSettings(networkSettings(for: tunnelConfiguration))
                 await runtime.activatePacketFlow()
@@ -122,6 +125,23 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             }
         }
         settings.ipv4Settings = ipv4
+
+        let ipv6 = NEIPv6Settings(
+            addresses: [configuration.ipv6Address],
+            networkPrefixLengths: [NSNumber(value: configuration.ipv6NetworkPrefixLength)]
+        )
+        if configuration.includeDefaultIPv6Route {
+            ipv6.includedRoutes = [NEIPv6Route.default()]
+        }
+        if !configuration.excludedIPv6Routes.isEmpty {
+            ipv6.excludedRoutes = configuration.excludedIPv6Routes.map {
+                NEIPv6Route(
+                    destinationAddress: $0.destinationAddress,
+                    networkPrefixLength: NSNumber(value: $0.networkPrefixLength)
+                )
+            }
+        }
+        settings.ipv6Settings = ipv6
 
         let dns = NEDNSSettings(servers: configuration.dnsServers)
         if configuration.captureAllDNSDomains {

@@ -742,9 +742,12 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(tunnel.tunnelRemoteAddress, "relay.example")
         XCTAssertEqual(tunnel.ipv4Address, "10.77.0.2")
         XCTAssertEqual(tunnel.ipv4SubnetMask, "255.255.255.255")
+        XCTAssertEqual(tunnel.ipv6Address, "fd77::2")
+        XCTAssertEqual(tunnel.ipv6NetworkPrefixLength, 128)
         XCTAssertEqual(tunnel.mtu, 1280)
-        XCTAssertEqual(tunnel.dnsServers, ["100.64.0.1"])
+        XCTAssertEqual(tunnel.dnsServers, ["100.64.0.1", "fd77::1"])
         XCTAssertTrue(tunnel.includeDefaultIPv4Route)
+        XCTAssertTrue(tunnel.includeDefaultIPv6Route)
         XCTAssertTrue(tunnel.captureAllDNSDomains)
     }
 
@@ -765,6 +768,58 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(tunnel.excludedIPv4Routes, [
             AuroraIPv4Route(destinationAddress: "203.0.113.7", subnetMask: "255.255.255.255"),
         ])
+    }
+
+    func testPacketTunnelConfigurationExcludesIPv6RelayFromDefaultRoute() throws {
+        let endpoint = URL(string: "https://[2001:db8:100::7]:9443")!
+        let tunnel = AuroraPacketTunnelConfiguration(configuration: AuroraConfiguration(endpoint: endpoint))
+
+        XCTAssertEqual(tunnel.tunnelRemoteAddress, "2001:db8:100::7")
+        XCTAssertEqual(tunnel.excludedIPv6Routes, [
+            AuroraIPv6Route(destinationAddress: "2001:db8:100::7", networkPrefixLength: 128),
+        ])
+    }
+
+    func testPacketTunnelConfigurationAppliesResolvedRelayAddressesBeforeActivation() throws {
+        let endpoint = URL(string: "https://relay.example:9443")!
+        let tunnel = AuroraPacketTunnelConfiguration(configuration: AuroraConfiguration(endpoint: endpoint))
+
+        let resolved = try tunnel.applyingResolvedRemoteAddresses([
+            "2001:db8:100::7",
+            "203.0.113.7",
+            "203.0.113.7",
+        ])
+
+        XCTAssertEqual(resolved.tunnelRemoteAddress, "2001:db8:100::7")
+        XCTAssertEqual(resolved.excludedIPv4Routes, [
+            AuroraIPv4Route(destinationAddress: "203.0.113.7", subnetMask: "255.255.255.255"),
+        ])
+        XCTAssertEqual(resolved.excludedIPv6Routes, [
+            AuroraIPv6Route(destinationAddress: "2001:db8:100::7", networkPrefixLength: 128),
+        ])
+        XCTAssertNoThrow(try resolved.validatedForNetworkSettings())
+    }
+
+    func testPacketTunnelConfigurationRejectsUnresolvedAndInvalidIPv6Settings() throws {
+        let endpoint = URL(string: "https://relay.example:9443")!
+        let tunnel = AuroraPacketTunnelConfiguration(configuration: AuroraConfiguration(endpoint: endpoint))
+        XCTAssertThrowsError(try tunnel.validatedForNetworkSettings())
+
+        var invalid = try tunnel.applyingResolvedRemoteAddresses(["203.0.113.7"])
+        invalid.ipv6NetworkPrefixLength = 129
+        XCTAssertThrowsError(try invalid.validatedForNetworkSettings())
+    }
+
+    func testTunnelEndpointResolverReturnsNumericLoopbackAddress() async throws {
+        let endpoint = URL(string: "https://localhost:9443")!
+        let resolver = AuroraTunnelEndpointResolver()
+        let resolved = try await resolver.resolve(
+            AuroraPacketTunnelConfiguration(configuration: AuroraConfiguration(endpoint: endpoint))
+        )
+
+        XCTAssertNotEqual(resolved.tunnelRemoteAddress, "localhost")
+        XCTAssertNoThrow(try resolved.validatedForNetworkSettings())
+        XCTAssertFalse(resolved.excludedIPv4Routes.isEmpty && resolved.excludedIPv6Routes.isEmpty)
     }
 
     func testTunnelProfileBuildsProviderConfigurationPayload() throws {
@@ -1908,6 +1963,7 @@ final class AuroraKitTests: XCTestCase {
         )
 
         XCTAssertTrue(provider.contains("AuroraTunnelConfigurationResolver"), "packet tunnel provider missing shared resolver")
+        XCTAssertTrue(provider.contains("endpointResolver.resolve"), "packet tunnel provider does not resolve relay endpoints before installing routes")
         XCTAssertTrue(provider.contains("AuroraUserDefaultsProfileStore"), "packet tunnel provider missing App Group profile store")
         XCTAssertTrue(provider.contains("AuroraAppleSharedContainer.appGroupIdentifier()"), "packet tunnel provider missing App Group scope")
     }
@@ -1920,11 +1976,32 @@ final class AuroraKitTests: XCTestCase {
         )
 
         let startRange = try XCTUnwrap(provider.range(of: "try await runtime.start()"))
+        let resolutionRange = try XCTUnwrap(provider.range(of: "try await endpointResolver.resolve"))
         let settingsRange = try XCTUnwrap(provider.range(of: "try await applyTunnelNetworkSettings"))
+        XCTAssertLessThan(
+            resolutionRange.lowerBound,
+            startRange.lowerBound,
+            "packet tunnel provider should resolve relay addresses before starting the tunnel"
+        )
         XCTAssertLessThan(
             startRange.lowerBound,
             settingsRange.lowerBound,
             "packet tunnel provider should connect the core before installing route and DNS settings"
+        )
+    }
+
+    func testPacketTunnelProviderInstallsIPv6Routes() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let provider = try String(
+            contentsOf: root.appendingPathComponent("SharedNetworkExtension/PacketTunnelProvider.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(provider.contains("NEIPv6Settings"), "packet tunnel provider missing IPv6 settings")
+        XCTAssertTrue(provider.contains("NEIPv6Route.default()"), "packet tunnel provider missing IPv6 default route")
+        XCTAssertTrue(
+            provider.contains("configuration.excludedIPv6Routes"),
+            "packet tunnel provider missing IPv6 relay exclusions"
         )
     }
 
