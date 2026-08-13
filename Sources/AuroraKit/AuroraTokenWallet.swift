@@ -140,14 +140,34 @@ public struct AuroraKeychainCredentialStore: AuroraSecureCredentialStore, @unche
     }
 
     public func save(_ data: Data, service: String, account: String) async throws {
-        try await delete(service: service, account: account)
-        var query = baseQuery(service: service, account: account)
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let query = baseQuery(service: service, account: account)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if updateStatus == errSecSuccess {
+            return
+        }
+        guard updateStatus == errSecItemNotFound else {
+            throw AuroraSecureCredentialStoreError.keychainStatus(updateStatus)
+        }
 
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw AuroraSecureCredentialStoreError.keychainStatus(status)
+        var addQuery = query
+        for (key, value) in attributes {
+            addQuery[key] = value
+        }
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus == errSecSuccess {
+            return
+        }
+        guard addStatus == errSecDuplicateItem else {
+            throw AuroraSecureCredentialStoreError.keychainStatus(addStatus)
+        }
+
+        let retryStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        guard retryStatus == errSecSuccess else {
+            throw AuroraSecureCredentialStoreError.keychainStatus(retryStatus)
         }
     }
 

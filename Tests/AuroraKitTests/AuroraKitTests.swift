@@ -114,6 +114,35 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertNil(loaded)
     }
 
+    func testKeychainCredentialStoreUsesUpdateBeforeAdd() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let source = try String(contentsOf: root.appendingPathComponent("Sources/AuroraKit/AuroraTokenWallet.swift"), encoding: .utf8)
+        let saveRange = try XCTUnwrap(source.range(of: "public func save(_ data: Data, service: String, account: String) async throws {"))
+        let loadRange = try XCTUnwrap(source.range(of: "public func load(service: String, account: String) async throws -> Data? {"))
+        let save = String(source[saveRange.lowerBound..<loadRange.lowerBound])
+
+        XCTAssertTrue(save.contains("SecItemUpdate"), "Keychain save should update an existing item before attempting an add")
+        XCTAssertFalse(save.contains("try await delete"), "Keychain save must not remove existing credentials before replacement succeeds")
+    }
+
+    func testKeychainCredentialStoreReplacesExistingValue() async throws {
+        let store = AuroraKeychainCredentialStore(accessGroup: nil)
+        let service = "org.aurora-protocol.aurora.tests.\(UUID().uuidString)"
+        let account = UUID().uuidString
+
+        do {
+            try await store.save(Data([0x01]), service: service, account: account)
+            try await store.save(Data([0x02]), service: service, account: account)
+            let loaded = try await store.load(service: service, account: account)
+            XCTAssertEqual(loaded, Data([0x02]))
+        } catch {
+            try? await store.delete(service: service, account: account)
+            throw error
+        }
+
+        try await store.delete(service: service, account: account)
+    }
+
     func testControllerRefreshesStatusThroughInjectedClient() async {
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
