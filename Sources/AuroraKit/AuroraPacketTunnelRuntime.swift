@@ -193,29 +193,66 @@ public protocol AuroraPacketExchangeClient: Sendable {
     func exchangePacketBatch(endpoint: URL, batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch
 }
 
+public enum AuroraPacketTunnelRuntimeTermination: Error, Equatable, Sendable {
+    case stopped
+    case packetFlowEnded
+    case packetPumpFailed
+    case outputPumpFailed
+    case packetInjectionFailed
+}
+
 public actor AuroraPacketTunnelRuntime {
     private let configuration: AuroraConfiguration
     private let packetFlow: any AuroraPacketFlow
     private let core: any AuroraPacketTunnelCore
+    private let onTerminalFailure: @Sendable (AuroraPacketTunnelRuntimeTermination) -> Void
     private var running = false
     private var connected = false
     private var coreClosed = false
     private var outputTask: Task<Void, Never>?
+    private var terminalFailure: AuroraPacketTunnelRuntimeTermination?
+    private let packetFlowWriteGate = AuroraPacketFlowWriteGate()
+    private var acceptsStart = true
+    private var nextStartIdentifier: UInt64 = 0
+    private var pendingStartIdentifier: UInt64?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
         configuration: AuroraConfiguration,
         packetFlow: any AuroraPacketFlow,
-        core: any AuroraPacketTunnelCore
+        core: any AuroraPacketTunnelCore,
+        onTerminalFailure: @escaping @Sendable (AuroraPacketTunnelRuntimeTermination) -> Void = { _ in }
     ) {
         self.configuration = configuration
         self.packetFlow = packetFlow
         self.core = core
+        self.onTerminalFailure = onTerminalFailure
     }
 
     public func start() async throws {
+        guard acceptsStart, pendingStartIdentifier == nil else {
+            throw CancellationError()
+        }
+        nextStartIdentifier &+= 1
+        let startIdentifier = nextStartIdentifier
+        pendingStartIdentifier = startIdentifier
+        defer {
+            finishStart(startIdentifier)
+        }
         try await core.connect(configuration: configuration)
+        guard acceptsStart, pendingStartIdentifier == startIdentifier else {
+            await forceCloseCore()
+            throw CancellationError()
+        }
         connected = true
         coreClosed = false
+        terminalFailure = nil
+        await packetFlowWriteGate.open()
+        guard acceptsStart, pendingStartIdentifier == startIdentifier else {
+            await packetFlowWriteGate.close()
+            await forceCloseCore()
+            throw CancellationError()
+        }
         running = true
     }
 
@@ -228,32 +265,51 @@ public actor AuroraPacketTunnelRuntime {
 
     @discardableResult
     public func processNextBatch() async throws -> Bool {
-        guard running, let inbound = await packetFlow.readPacketBatch() else {
+        guard running else {
+            return false
+        }
+        guard let inbound = await packetFlow.readPacketBatch(), running else {
             return false
         }
         guard inbound.packets.count == inbound.protocolNumbers.count else {
             return true
         }
         let outbound = try await core.ingestPacketBatch(inbound)
+        guard running else {
+            return false
+        }
         if !outbound.isEmpty, Self.canWriteToPacketFlow(outbound) {
-            _ = await packetFlow.writePacketBatch(outbound)
+            let writeSucceeded = await packetFlowWriteGate.write(outbound, to: packetFlow)
+            guard writeSucceeded else {
+                guard running else {
+                    return false
+                }
+                await terminateDueToFailure(.packetInjectionFailed)
+                return false
+            }
         }
         return true
     }
 
-    public func runUntilStopped() async {
+    @discardableResult
+    public func runUntilStopped() async -> AuroraPacketTunnelRuntimeTermination {
         activatePacketFlow()
         while running {
             do {
                 let processed = try await processNextBatch()
                 if !processed {
-                    running = false
+                    if running {
+                        await terminateDueToFailure(.packetFlowEnded)
+                    }
                 }
             } catch {
-                running = false
+                if running {
+                    await terminateDueToFailure(.packetPumpFailed)
+                }
             }
         }
         await closeCoreIfConnected()
+        return terminalFailure ?? .stopped
     }
 
     public func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {
@@ -269,10 +325,13 @@ public actor AuroraPacketTunnelRuntime {
     }
 
     public func stop() async {
+        acceptsStart = false
         running = false
         outputTask?.cancel()
         outputTask = nil
+        await packetFlowWriteGate.close()
         await closeCore()
+        await waitForPendingStart()
     }
 
     private func closeCoreIfConnected() async {
@@ -291,6 +350,33 @@ public actor AuroraPacketTunnelRuntime {
         await core.close()
     }
 
+    private func forceCloseCore() async {
+        coreClosed = true
+        connected = false
+        await core.close()
+    }
+
+    private func finishStart(_ startIdentifier: UInt64) {
+        guard pendingStartIdentifier == startIdentifier else {
+            return
+        }
+        pendingStartIdentifier = nil
+        let waiters = startWaiters
+        startWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    private func waitForPendingStart() async {
+        guard pendingStartIdentifier != nil else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
     private func startOutputPumpIfSupported() {
         guard let outputCore = core as? any AuroraPacketTunnelOutputCore else {
             return
@@ -305,22 +391,82 @@ public actor AuroraPacketTunnelRuntime {
         while running, !Task.isCancelled {
             do {
                 let outbound = try await outputCore.nextOutboundPacketBatch()
+                guard running, !Task.isCancelled else {
+                    return
+                }
                 if !outbound.isEmpty, Self.canWriteToPacketFlow(outbound) {
-                    _ = await packetFlow.writePacketBatch(outbound)
+                    let writeSucceeded = await packetFlowWriteGate.write(outbound, to: packetFlow)
+                    guard writeSucceeded else {
+                        guard running, !Task.isCancelled else {
+                            return
+                        }
+                        await terminateDueToFailure(.packetInjectionFailed)
+                        return
+                    }
                 }
             } catch {
                 guard running else {
                     return
                 }
-                running = false
-                await closeCore()
+                await terminateDueToFailure(.outputPumpFailed)
                 return
             }
         }
     }
 
+    private func terminateDueToFailure(_ failure: AuroraPacketTunnelRuntimeTermination) async {
+        guard terminalFailure == nil else {
+            return
+        }
+        terminalFailure = failure
+        acceptsStart = false
+        running = false
+        outputTask?.cancel()
+        outputTask = nil
+        await packetFlowWriteGate.close()
+        await closeCore()
+        onTerminalFailure(failure)
+    }
+
     private static func canWriteToPacketFlow(_ batch: AuroraPacketFlowBatch) -> Bool {
         (try? AuroraPacketBatchCodec.encode(batch)) != nil
+    }
+}
+
+private actor AuroraPacketFlowWriteGate {
+    private var acceptingWrites = false
+    private var inFlightWrites = 0
+    private var closeWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func open() {
+        acceptingWrites = true
+    }
+
+    func close() async {
+        acceptingWrites = false
+        guard inFlightWrites > 0 else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            closeWaiters.append(continuation)
+        }
+    }
+
+    func write(_ batch: AuroraPacketFlowBatch, to packetFlow: any AuroraPacketFlow) async -> Bool {
+        guard acceptingWrites else {
+            return false
+        }
+        inFlightWrites += 1
+        let succeeded = await packetFlow.writePacketBatch(batch)
+        inFlightWrites -= 1
+        if inFlightWrites == 0 {
+            let waiters = closeWaiters
+            closeWaiters.removeAll()
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+        return succeeded
     }
 }
 

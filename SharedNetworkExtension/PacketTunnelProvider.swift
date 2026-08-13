@@ -13,11 +13,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let serverClient = URLSessionAuroraServerClient()
     private let endpointResolver = AuroraTunnelEndpointResolver()
     private let pathObserver = NetworkPathObserver()
+    private let lifecycle = AuroraPacketTunnelLifecycle()
+    private let startupGate = AuroraPacketTunnelStartupGate()
     private var runtime: AuroraPacketTunnelRuntime?
     private var runtimeTask: Task<Void, Never>?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let completion = StartTunnelCompletion(completionHandler)
+        let lifecycle = lifecycle
+        let generation = lifecycle.beginStartup()
+        let startupGate = startupGate
+        startupGate.begin(generation)
         let configuration = resolvedConfiguration()
         let serverClient = serverClient
         let packetFlow = NetworkExtensionPacketFlow(packetFlow: packetFlow)
@@ -31,7 +37,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         let runtime = AuroraPacketTunnelRuntime(
             configuration: configuration,
             packetFlow: packetFlow,
-            core: core
+            core: core,
+            onTerminalFailure: { [weak self] failure in
+                _ = lifecycle.claimTerminalFailure(generation, delivering: {
+                    self?.cancelTunnelWithError(failure)
+                })
+            }
         )
         self.runtime = runtime
 
@@ -42,32 +53,45 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 )
                 try await runtime.start()
                 try await applyTunnelNetworkSettings(networkSettings(for: tunnelConfiguration))
-                await runtime.activatePacketFlow()
-                pathObserver.start { change in
-                    Task {
-                        await runtime.notifyNetworkPathChange(change)
+                guard lifecycle.beginPathObservation(generation, activating: {
+                    pathObserver.start { change in
+                        Task {
+                            await runtime.notifyNetworkPathChange(change)
+                        }
                     }
+                }) else {
+                    throw CancellationError()
                 }
                 await runtime.notifyNetworkPathChange(pathObserver.currentChange())
-                completion(nil)
+                guard lifecycle.completeStartup(generation, delivering: {
+                    completion(nil)
+                }) else {
+                    throw CancellationError()
+                }
+                startupGate.finish(generation)
                 await runtime.runUntilStopped()
             } catch {
-                pathObserver.stop()
+                lifecycle.cancelStartup(generation)
                 await runtime.stop()
                 completion(error)
+                startupGate.finish(generation)
             }
         }
     }
 
     override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         let completion = StopTunnelCompletion(completionHandler)
+        lifecycle.requestStop {
+            pathObserver.stop()
+        }
+        let startupGate = startupGate
         let runtime = runtime
-        pathObserver.stop()
         runtimeTask?.cancel()
         runtimeTask = nil
         self.runtime = nil
         Task {
             await runtime?.stop()
+            await startupGate.waitForQuiescence()
             completion()
         }
     }
