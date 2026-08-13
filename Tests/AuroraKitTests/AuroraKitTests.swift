@@ -1840,17 +1840,22 @@ final class AuroraKitTests: XCTestCase {
         }
 
         XCTAssertTrue(workflow.contains("scripts/aurora-apple-check.sh"), "CI should call the shared Apple readiness script")
-        let actionPins = [
-            ("uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09", 2),
-            ("uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e", 1),
-        ]
-        for (reference, expectedCount) in actionPins {
-            let count = workflow.components(separatedBy: reference).count - 1
-            XCTAssertEqual(count, expectedCount, "CI should use the expected immutable action pin")
+        let actionReferences = workflow.split(separator: "\n").compactMap { line -> String? in
+            let fields = line.split(whereSeparator: \.isWhitespace)
+            guard let usesIndex = fields.firstIndex(of: "uses:"), usesIndex + 1 < fields.endIndex else {
+                return nil
+            }
+            return String(fields[usesIndex + 1])
         }
-        XCTAssertNil(
-            workflow.range(of: "uses:\\s+[^@\\s]+@(v[0-9]+|main|master)", options: .regularExpression),
-            "CI should not use mutable action selectors"
+        let approvedActionReferences = [
+            "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+            "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+            "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+        ]
+        XCTAssertEqual(
+            actionReferences.sorted(),
+            approvedActionReferences.sorted(),
+            "CI should use only approved immutable action pins"
         )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
