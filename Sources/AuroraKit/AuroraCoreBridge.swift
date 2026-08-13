@@ -25,6 +25,7 @@ enum AuroraCore {
         case closeNativeSession = 10
         case ingressLocalPacket = 18
         case nextLocalPacket = 15
+        case reserveNativeProvisioning = 19
     }
 
     private enum Status: UInt8 {
@@ -87,6 +88,13 @@ enum AuroraCore {
             }
             self.requestBody = requestBody
         }
+    }
+
+    struct NativeProvisioningReservation: Equatable, Sendable {
+        var provisioning: Data
+        var spentHintKey: Data
+        var relayBucketID: Data
+        var accessHintExpiryUnix: UInt64
     }
 
     private struct NativeLocalPackets: Decodable {
@@ -214,6 +222,42 @@ enum AuroraCore {
         return okPayload(call(.nextLocalPacket, arg: handle))
     }
 
+    static func reserveNativeProvisioning(
+        source: Data,
+        spentHintKeys: [Data],
+        now: Date = Date()
+    ) -> NativeProvisioningReservation? {
+        let seconds = now.timeIntervalSince1970
+        guard source.count > 0,
+              source.count <= AuroraNativeProvisioningStore.maximumBytes,
+              spentHintKeys.count <= AuroraNativeProvisioningStore.maximumReservations,
+              spentHintKeys.allSatisfy({ $0.count == 48 }),
+              seconds.isFinite,
+              seconds >= 1,
+              seconds <= Double(Int64.max)
+        else {
+            return nil
+        }
+        var input = Data()
+        input.reserveCapacity(5 + source.count + spentHintKeys.count * 48)
+        var sourceLength = UInt32(source.count).bigEndian
+        withUnsafeBytes(of: &sourceLength) { input.append(contentsOf: $0) }
+        input.append(source)
+        input.append(UInt8(spentHintKeys.count))
+        for spentHintKey in spentHintKeys {
+            input.append(spentHintKey)
+        }
+        defer { input.resetBytes(in: 0..<input.count) }
+        guard let payload = okPayload(call(
+            .reserveNativeProvisioning,
+            input: input,
+            arg: UInt64(seconds)
+        )) else {
+            return nil
+        }
+        return decodeNativeProvisioningReservation(payload, nowUnix: UInt64(seconds))
+    }
+
     // MARK: - ABI plumbing
 
     private static func okPayload(_ result: Result?) -> Data? {
@@ -238,6 +282,42 @@ enum AuroraCore {
         guard outLen >= 1, let status = Status(rawValue: ptr[0]) else { return nil }
         let payload = outLen > 1 ? Data(bytes: ptr + 1, count: Int(outLen) - 1) : Data()
         return Result(status: status, payload: payload)
+    }
+
+    private static func decodeNativeProvisioningReservation(
+        _ payload: Data,
+        nowUnix: UInt64
+    ) -> NativeProvisioningReservation? {
+        let metadataBytes = 48 + 16 + 8
+        guard payload.count >= 3 + metadataBytes else {
+            return nil
+        }
+        let provisioningLength = Int(payload[payload.startIndex]) << 16 |
+            Int(payload[payload.startIndex + 1]) << 8 |
+            Int(payload[payload.startIndex + 2])
+        let provisioningStart = payload.startIndex + 3
+        let provisioningEnd = provisioningStart + provisioningLength
+        guard provisioningLength > 0,
+              provisioningLength <= AuroraNativeProvisioningStore.maximumBytes,
+              provisioningEnd + metadataBytes == payload.endIndex
+        else {
+            return nil
+        }
+        let spentHintStart = provisioningEnd
+        let spentHintEnd = spentHintStart + 48
+        let relayBucketEnd = spentHintEnd + 16
+        let expiry = payload[relayBucketEnd ..< payload.endIndex].reduce(UInt64(0)) { partial, byte in
+            (partial << 8) | UInt64(byte)
+        }
+        guard expiry > nowUnix else {
+            return nil
+        }
+        return NativeProvisioningReservation(
+            provisioning: Data(payload[provisioningStart ..< provisioningEnd]),
+            spentHintKey: Data(payload[spentHintStart ..< spentHintEnd]),
+            relayBucketID: Data(payload[spentHintEnd ..< relayBucketEnd]),
+            accessHintExpiryUnix: expiry
+        )
     }
 
     private struct MetadataResponseJSON: Decodable {

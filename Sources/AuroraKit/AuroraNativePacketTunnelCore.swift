@@ -34,6 +34,98 @@ public enum AuroraNativeTunnelError: Error, Equatable, Sendable {
     case coreOperationFailed
 }
 
+public struct AuroraNativeProvisioningReservation: Equatable, Sendable {
+    public var provisioning: Data
+    public var spentHintKey: Data
+    public var relayBucketID: Data
+    public var accessHintExpiryUnix: UInt64
+
+    public init(
+        provisioning: Data,
+        spentHintKey: Data,
+        relayBucketID: Data,
+        accessHintExpiryUnix: UInt64
+    ) {
+        self.provisioning = Data(provisioning)
+        self.spentHintKey = Data(spentHintKey)
+        self.relayBucketID = Data(relayBucketID)
+        self.accessHintExpiryUnix = accessHintExpiryUnix
+    }
+
+    mutating func zero() {
+        provisioning.resetBytes(in: 0..<provisioning.count)
+        spentHintKey.resetBytes(in: 0..<spentHintKey.count)
+        relayBucketID.resetBytes(in: 0..<relayBucketID.count)
+        self = AuroraNativeProvisioningReservation(
+            provisioning: Data(),
+            spentHintKey: Data(),
+            relayBucketID: Data(),
+            accessHintExpiryUnix: 0
+        )
+    }
+}
+
+public protocol AuroraNativeProvisioningReserver: Sendable {
+    func reserve(
+        source: Data,
+        spentHintKeys: [Data],
+        now: Date
+    ) async throws -> AuroraNativeProvisioningReservation
+}
+
+public struct AuroraCoreNativeProvisioningReserver: AuroraNativeProvisioningReserver {
+    public init() {}
+
+    public func reserve(
+        source: Data,
+        spentHintKeys: [Data],
+        now: Date
+    ) async throws -> AuroraNativeProvisioningReservation {
+        guard let reservation = AuroraCore.reserveNativeProvisioning(
+            source: source,
+            spentHintKeys: spentHintKeys,
+            now: now
+        ) else {
+            throw AuroraNativeTunnelError.invalidProvisioning
+        }
+        return AuroraNativeProvisioningReservation(
+            provisioning: reservation.provisioning,
+            spentHintKey: reservation.spentHintKey,
+            relayBucketID: reservation.relayBucketID,
+            accessHintExpiryUnix: reservation.accessHintExpiryUnix
+        )
+    }
+}
+
+struct AuroraNativeProvisioningReservationLedger: Codable, Equatable, Sendable {
+    struct Entry: Codable, Equatable, Sendable {
+        var spentHintKey: Data
+        var accessHintExpiryUnix: UInt64
+    }
+
+    var entries: [Entry]
+
+    mutating func prune(nowUnix: UInt64) {
+        entries.removeAll { $0.accessHintExpiryUnix <= nowUnix }
+    }
+
+    func isValid() -> Bool {
+        guard entries.count <= AuroraNativeProvisioningStore.maximumReservations else {
+            return false
+        }
+        var seen = Set<Data>()
+        for entry in entries {
+            guard entry.spentHintKey.count == 48,
+                  entry.accessHintExpiryUnix > 0,
+                  seen.insert(entry.spentHintKey).inserted
+            else {
+                return false
+            }
+        }
+        return true
+    }
+}
+
 final class AuroraNoRedirectSessionDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     func urlSession(
         _ session: URLSession,
@@ -48,13 +140,21 @@ final class AuroraNoRedirectSessionDelegate: NSObject, URLSessionTaskDelegate, @
 
 public actor AuroraNativeProvisioningStore {
     public static let service = "org.aurora-protocol.aurora.native-provisioning"
+    public static let reservationService = "org.aurora-protocol.aurora.native-provisioning-reservations"
     public static let defaultIdentifier = "active"
-    public static let maximumBytes = 1 << 20
+    public static let maximumBytes = 16 << 20
+    public static let maximumReservations = 64
+    private static let maximumReservationLedgerBytes = 16 << 10
 
     private let credentialStore: any AuroraSecureCredentialStore
+    private let reserver: any AuroraNativeProvisioningReserver
 
-    public init(credentialStore: any AuroraSecureCredentialStore = AuroraKeychainCredentialStore()) {
+    public init(
+        credentialStore: any AuroraSecureCredentialStore = AuroraKeychainCredentialStore(),
+        reserver: any AuroraNativeProvisioningReserver = AuroraCoreNativeProvisioningReserver()
+    ) {
         self.credentialStore = credentialStore
+        self.reserver = reserver
     }
 
     public func save(_ provisioning: Data, identifier: String = defaultIdentifier) async throws {
@@ -65,13 +165,20 @@ public actor AuroraNativeProvisioningStore {
             throw AuroraNativeTunnelError.invalidProvisioning
         }
         try await credentialStore.save(provisioning, service: Self.service, account: Self.account(identifier: identifier))
+        try await credentialStore.delete(service: Self.reservationService, account: Self.reservationAccount(identifier: identifier))
     }
 
     public func load(identifier: String = defaultIdentifier) async throws -> Data? {
         guard Self.isValidIdentifier(identifier) else {
             throw AuroraNativeTunnelError.invalidProvisioning
         }
-        return try await credentialStore.load(service: Self.service, account: Self.account(identifier: identifier))
+        guard let provisioning = try await credentialStore.load(service: Self.service, account: Self.account(identifier: identifier)) else {
+            return nil
+        }
+        guard !provisioning.isEmpty, provisioning.count <= Self.maximumBytes else {
+            throw AuroraNativeTunnelError.invalidProvisioning
+        }
+        return provisioning
     }
 
     public func delete(identifier: String = defaultIdentifier) async throws {
@@ -79,6 +186,51 @@ public actor AuroraNativeProvisioningStore {
             throw AuroraNativeTunnelError.invalidProvisioning
         }
         try await credentialStore.delete(service: Self.service, account: Self.account(identifier: identifier))
+        try await credentialStore.delete(service: Self.reservationService, account: Self.reservationAccount(identifier: identifier))
+    }
+
+    public func reserve(
+        identifier: String = defaultIdentifier,
+        now: Date = Date()
+    ) async throws -> AuroraNativeProvisioningReservation {
+        guard Self.isValidIdentifier(identifier),
+              now.timeIntervalSince1970.isFinite,
+              now.timeIntervalSince1970 >= 1,
+              now.timeIntervalSince1970 <= Double(Int64.max),
+              var source = try await load(identifier: identifier)
+        else {
+            throw AuroraNativeTunnelError.invalidProvisioning
+        }
+        defer { source.resetBytes(in: 0..<source.count) }
+        let nowUnix = UInt64(now.timeIntervalSince1970)
+        var ledger = try await loadReservationLedger(identifier: identifier)
+        ledger.prune(nowUnix: nowUnix)
+        let reservation = try await reserver.reserve(
+            source: source,
+            spentHintKeys: ledger.entries.map(\.spentHintKey),
+            now: now
+        )
+        guard reservation.provisioning.count > 0,
+              reservation.provisioning.count <= Self.maximumBytes,
+              reservation.spentHintKey.count == 48,
+              reservation.relayBucketID.count == 16,
+              reservation.accessHintExpiryUnix > nowUnix,
+              !ledger.entries.contains(where: { $0.spentHintKey == reservation.spentHintKey }),
+              ledger.entries.count < Self.maximumReservations
+        else {
+            throw AuroraNativeTunnelError.invalidProvisioning
+        }
+        ledger.entries.append(.init(
+            spentHintKey: reservation.spentHintKey,
+            accessHintExpiryUnix: reservation.accessHintExpiryUnix
+        ))
+        let encodedLedger = try JSONEncoder().encode(ledger)
+        try await credentialStore.save(
+            encodedLedger,
+            service: Self.reservationService,
+            account: Self.reservationAccount(identifier: identifier)
+        )
+        return reservation
     }
 
     public nonisolated static func isValidIdentifier(_ identifier: String) -> Bool {
@@ -95,6 +247,27 @@ public actor AuroraNativeProvisioningStore {
 
     public nonisolated static func account(identifier: String) -> String {
         "native-provisioning:\(identifier)"
+    }
+
+    public nonisolated static func reservationAccount(identifier: String) -> String {
+        "native-provisioning-reservation:\(identifier)"
+    }
+
+    private func loadReservationLedger(identifier: String) async throws -> AuroraNativeProvisioningReservationLedger {
+        guard let encoded = try await credentialStore.load(
+            service: Self.reservationService,
+            account: Self.reservationAccount(identifier: identifier)
+        ) else {
+            return AuroraNativeProvisioningReservationLedger(entries: [])
+        }
+        guard !encoded.isEmpty, encoded.count <= Self.maximumReservationLedgerBytes else {
+            throw AuroraNativeTunnelError.invalidProvisioning
+        }
+        let ledger = try JSONDecoder().decode(AuroraNativeProvisioningReservationLedger.self, from: encoded)
+        guard ledger.isValid() else {
+            throw AuroraNativeTunnelError.invalidProvisioning
+        }
+        return ledger
     }
 }
 
@@ -222,13 +395,13 @@ public actor AuroraNativePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketT
 
     public func connect(configuration: AuroraConfiguration) async throws {
         guard handle == nil,
-              let identifier = configuration.nativeProvisioningIdentifier,
-              let provisioning = try await provisioningStore.load(identifier: identifier),
-              !provisioning.isEmpty
+              let identifier = configuration.nativeProvisioningIdentifier
         else {
             throw AuroraNativeTunnelError.invalidProvisioning
         }
-        let work = try await sessionDriver.begin(provisioning: provisioning)
+        var reservation = try await provisioningStore.reserve(identifier: identifier)
+        defer { reservation.zero() }
+        let work = try await sessionDriver.begin(provisioning: reservation.provisioning)
         do {
             let response = try await issuerTransport.postIssuerWork(
                 url: try issuerURL(for: work),
