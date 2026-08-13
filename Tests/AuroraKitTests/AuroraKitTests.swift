@@ -1030,6 +1030,94 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertFalse(ledgerData.contains(Data(repeating: 0xaa, count: 8)))
     }
 
+    func testNativeProvisioningStoreIgnoresStaleLedgerAfterReplacementCleanupFailure() async throws {
+        let credentials = MockSecureCredentialStore()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xa1, count: 64),
+            spentHintKey: Data(repeating: 0x11, count: 48),
+            relayBucketID: Data(repeating: 0x21, count: 16),
+            accessHintExpiryUnix: 1_800_003_600
+        )
+        let second = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xa2, count: 64),
+            spentHintKey: Data(repeating: 0x12, count: 48),
+            relayBucketID: Data(repeating: 0x22, count: 16),
+            accessHintExpiryUnix: 1_800_003_600
+        )
+        let firstReserver = MockNativeProvisioningReserver(reservations: [first])
+        let store = AuroraNativeProvisioningStore(
+            credentialStore: credentials,
+            validator: MockNativeProvisioningValidator(),
+            reserver: firstReserver
+        )
+        try await store.save(Data(repeating: 0xaa, count: 128), identifier: "recovery-slot")
+        _ = try await store.reserve(identifier: "recovery-slot", now: now)
+
+        await credentials.failDeletes(
+            service: AuroraNativeProvisioningStore.reservationService,
+            account: AuroraNativeProvisioningStore.reservationAccount(identifier: "recovery-slot")
+        )
+        try await store.save(Data(repeating: 0xbb, count: 128), identifier: "recovery-slot")
+
+        let secondReserver = MockNativeProvisioningReserver(reservations: [second])
+        let restoredStore = AuroraNativeProvisioningStore(
+            credentialStore: credentials,
+            validator: MockNativeProvisioningValidator(),
+            reserver: secondReserver
+        )
+        _ = try await restoredStore.reserve(identifier: "recovery-slot", now: now)
+
+        let spentHintKeys = await secondReserver.reservedSpentHintKeys
+        XCTAssertEqual(spentHintKeys, [[]])
+    }
+
+    func testNativeProvisioningStoreMigratesUnboundLedgerConservatively() async throws {
+        let credentials = MockSecureCredentialStore()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let legacySpentHintKey = Data(repeating: 0x11, count: 48)
+        let next = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xa2, count: 64),
+            spentHintKey: Data(repeating: 0x12, count: 48),
+            relayBucketID: Data(repeating: 0x22, count: 16),
+            accessHintExpiryUnix: 1_800_003_600
+        )
+        let store = AuroraNativeProvisioningStore(
+            credentialStore: credentials,
+            validator: MockNativeProvisioningValidator(),
+            reserver: MockNativeProvisioningReserver(reservations: [])
+        )
+        try await store.save(Data(repeating: 0xaa, count: 128), identifier: "recovery-slot")
+
+        let legacyLedger = LegacyNativeProvisioningReservationLedger(entries: [
+            .init(spentHintKey: legacySpentHintKey, accessHintExpiryUnix: 1_800_003_600),
+        ])
+        try await credentials.save(
+            JSONEncoder().encode(legacyLedger),
+            service: AuroraNativeProvisioningStore.reservationService,
+            account: AuroraNativeProvisioningStore.reservationAccount(identifier: "recovery-slot")
+        )
+
+        let reserver = MockNativeProvisioningReserver(reservations: [next])
+        let restoredStore = AuroraNativeProvisioningStore(
+            credentialStore: credentials,
+            validator: MockNativeProvisioningValidator(),
+            reserver: reserver
+        )
+        _ = try await restoredStore.reserve(identifier: "recovery-slot", now: now)
+
+        let spentHintKeys = await reserver.reservedSpentHintKeys
+        XCTAssertEqual(spentHintKeys, [[legacySpentHintKey]])
+        let savedLedgerData = await credentials.savedData(
+            service: AuroraNativeProvisioningStore.reservationService,
+            account: AuroraNativeProvisioningStore.reservationAccount(identifier: "recovery-slot")
+        )
+        let ledgerData = try XCTUnwrap(savedLedgerData)
+        let ledger = try JSONDecoder().decode(AuroraNativeProvisioningReservationLedger.self, from: ledgerData)
+        XCTAssertEqual(ledger.sourceDigest?.count, 32)
+        XCTAssertEqual(ledger.entries.map(\.spentHintKey), [legacySpentHintKey, next.spentHintKey])
+    }
+
     func testNativePacketTunnelCoreUsesFreshReservationAfterReconnect() async throws {
         let credentials = MockSecureCredentialStore()
         let first = AuroraNativeProvisioningReservation(
@@ -3127,6 +3215,7 @@ private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
     }
 
     private var entries: [Key: Data] = [:]
+    private var failingDeletes = Set<Key>()
     private(set) var lastSave: Key?
     private(set) var deletedKeys: [Key] = []
 
@@ -3142,13 +3231,29 @@ private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
 
     func delete(service: String, account: String) async throws {
         let key = Key(service: service, account: account)
+        guard !failingDeletes.contains(key) else {
+            throw AuroraNativeTunnelError.unavailable
+        }
         entries.removeValue(forKey: key)
         deletedKeys.append(key)
+    }
+
+    func failDeletes(service: String, account: String) {
+        failingDeletes.insert(Key(service: service, account: account))
     }
 
     func savedData(service: String, account: String) -> Data? {
         entries[Key(service: service, account: account)]
     }
+}
+
+private struct LegacyNativeProvisioningReservationLedger: Codable {
+    struct Entry: Codable {
+        var spentHintKey: Data
+        var accessHintExpiryUnix: UInt64
+    }
+
+    var entries: [Entry]
 }
 
 private actor MockNativeProvisioningReserver: AuroraNativeProvisioningReserver {

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public struct AuroraNativeIssuerWork: Equatable, Sendable {
@@ -120,14 +121,22 @@ struct AuroraNativeProvisioningReservationLedger: Codable, Equatable, Sendable {
         var accessHintExpiryUnix: UInt64
     }
 
+    var sourceDigest: Data?
     var entries: [Entry]
+
+    init(sourceDigest: Data? = nil, entries: [Entry]) {
+        self.sourceDigest = sourceDigest.map { Data($0) }
+        self.entries = entries
+    }
 
     mutating func prune(nowUnix: UInt64) {
         entries.removeAll { $0.accessHintExpiryUnix <= nowUnix }
     }
 
     func isValid() -> Bool {
-        guard entries.count <= AuroraNativeProvisioningStore.maximumReservations else {
+        guard (sourceDigest == nil || sourceDigest?.count == 32),
+              entries.count <= AuroraNativeProvisioningStore.maximumReservations
+        else {
             return false
         }
         var seen = Set<Data>()
@@ -186,7 +195,8 @@ public actor AuroraNativeProvisioningStore {
         }
         try await validator.validate(source: provisioning, now: Date())
         try await credentialStore.save(provisioning, service: Self.service, account: Self.account(identifier: identifier))
-        try await credentialStore.delete(service: Self.reservationService, account: Self.reservationAccount(identifier: identifier))
+        // A source-bound ledger that survives cleanup cannot apply to this replacement source.
+        try? await credentialStore.delete(service: Self.reservationService, account: Self.reservationAccount(identifier: identifier))
     }
 
     public func load(identifier: String = defaultIdentifier) async throws -> Data? {
@@ -224,7 +234,11 @@ public actor AuroraNativeProvisioningStore {
         }
         defer { source.resetBytes(in: 0..<source.count) }
         let nowUnix = UInt64(now.timeIntervalSince1970)
+        let sourceDigest = Self.provisioningDigest(source)
         var ledger = try await loadReservationLedger(identifier: identifier)
+        if let persistedSourceDigest = ledger.sourceDigest, persistedSourceDigest != sourceDigest {
+            ledger = AuroraNativeProvisioningReservationLedger(sourceDigest: sourceDigest, entries: [])
+        }
         ledger.prune(nowUnix: nowUnix)
         let reservation = try await reserver.reserve(
             source: source,
@@ -245,6 +259,7 @@ public actor AuroraNativeProvisioningStore {
             spentHintKey: reservation.spentHintKey,
             accessHintExpiryUnix: reservation.accessHintExpiryUnix
         ))
+        ledger.sourceDigest = sourceDigest
         let encodedLedger = try JSONEncoder().encode(ledger)
         try await credentialStore.save(
             encodedLedger,
@@ -272,6 +287,10 @@ public actor AuroraNativeProvisioningStore {
 
     public nonisolated static func reservationAccount(identifier: String) -> String {
         "native-provisioning-reservation:\(identifier)"
+    }
+
+    private nonisolated static func provisioningDigest(_ source: Data) -> Data {
+        Data(SHA256.hash(data: source))
     }
 
     private func loadReservationLedger(identifier: String) async throws -> AuroraNativeProvisioningReservationLedger {
