@@ -1841,15 +1841,16 @@ final class AuroraKitTests: XCTestCase {
         }
 
         XCTAssertTrue(workflow.contains("scripts/aurora-apple-check.sh"), "CI should call the shared Apple readiness script")
-        XCTAssertTrue(workflow.contains("permissions:\n  contents: read"), "CI should grant only repository read access")
-        let actionReferences = try workflowActionReferences(at: root.appendingPathComponent(".github/workflows/ci.yml"))
+        let workflowSecurityPolicy = try workflowSecurityPolicy(at: root.appendingPathComponent(".github/workflows/ci.yml"))
+        XCTAssertEqual(workflowSecurityPolicy.contentsPermission, "read", "CI should grant only repository read access")
+        XCTAssertEqual(workflowSecurityPolicy.checkoutDisablesCredentialPersistence, [true, true], "CI checkouts should not persist credentials")
         let approvedActionReferences = [
             "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
             "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
             "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
         ]
         XCTAssertEqual(
-            actionReferences.sorted(),
+            workflowSecurityPolicy.actionReferences.sorted(),
             approvedActionReferences.sorted(),
             "CI should use only approved immutable action pins"
         )
@@ -2049,31 +2050,48 @@ final class AuroraKitTests: XCTestCase {
     }
 }
 
-private func workflowActionReferences(at workflowURL: URL) throws -> [String] {
+private struct WorkflowSecurityPolicy {
+    let actionReferences: [String]
+    let contentsPermission: String?
+    let checkoutDisablesCredentialPersistence: [Bool]
+}
+
+private func workflowSecurityPolicy(at workflowURL: URL) throws -> WorkflowSecurityPolicy {
     let rubyURL = URL(fileURLWithPath: "/usr/bin/ruby")
     guard FileManager.default.isExecutableFile(atPath: rubyURL.path) else {
         throw NSError(domain: "AuroraKitTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Ruby YAML parser is unavailable"])
     }
 
     let script = #"""
+    require "json"
     require "yaml"
 
-    def collect_uses(value, references)
+    def collect_workflow_policy(value, references, checkout_credential_persistence)
       case value
       when Hash
-        value.each do |key, child|
-          references << child if key == "uses" && child.is_a?(String)
-          collect_uses(child, references)
+        uses = value["uses"]
+        if uses.is_a?(String)
+          references << uses
+          if uses.start_with?("actions/checkout@")
+            checkout_credential_persistence << (value.dig("with", "persist-credentials") == false)
+          end
         end
+        value.each_value { |child| collect_workflow_policy(child, references, checkout_credential_persistence) }
       when Array
-        value.each { |child| collect_uses(child, references) }
+        value.each { |child| collect_workflow_policy(child, references, checkout_credential_persistence) }
       end
     end
 
     workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)
     references = []
-    collect_uses(workflow, references)
-    STDOUT.write(references.join("\0"))
+    checkout_credential_persistence = []
+    collect_workflow_policy(workflow, references, checkout_credential_persistence)
+    contents_permission = workflow.dig("permissions", "contents") if workflow.is_a?(Hash)
+    STDOUT.write(JSON.generate({
+      "actionReferences" => references,
+      "contentsPermission" => contents_permission,
+      "checkoutDisablesCredentialPersistence" => checkout_credential_persistence,
+    }))
     """#
     let process = Process()
     let output = Pipe()
@@ -2090,8 +2108,20 @@ private func workflowActionReferences(at workflowURL: URL) throws -> [String] {
         throw NSError(domain: "AuroraKitTests", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    let encoded = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-    return encoded.isEmpty ? [] : encoded.components(separatedBy: "\0")
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    guard
+        let decoded = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let actionReferences = decoded["actionReferences"] as? [String],
+        let checkoutDisablesCredentialPersistence = decoded["checkoutDisablesCredentialPersistence"] as? [Bool]
+    else {
+        throw NSError(domain: "AuroraKitTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "Ruby YAML parser returned an invalid workflow policy"])
+    }
+
+    return WorkflowSecurityPolicy(
+        actionReferences: actionReferences,
+        contentsPermission: decoded["contentsPermission"] as? String,
+        checkoutDisablesCredentialPersistence: checkoutDisablesCredentialPersistence
+    )
 }
 
 private final class MockPortableProfileStore: AuroraPortableProfileStore, @unchecked Sendable {

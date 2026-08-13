@@ -15,6 +15,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           path: aurora-apple
+          persist-credentials: false
       - name: Checkout aurora-core
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -22,6 +23,7 @@ jobs:
           repository: aurora-protocol/aurora-core
           ref: 1159f2adfe89ff5e8494db97197f39766f32777f
           path: aurora-core
+          persist-credentials: false
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
