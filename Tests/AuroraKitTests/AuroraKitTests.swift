@@ -1406,7 +1406,7 @@ final class AuroraKitTests: XCTestCase {
         ])
     }
 
-    func testPacketTunnelRuntimeClosesCoreWhenPacketPumpFails() async throws {
+    func testPacketTunnelRuntimeReportsPacketPumpFailureAndClosesCore() async throws {
         let packetFlow = MockPacketFlow(
             batches: [
                 AuroraPacketFlowBatch(
@@ -1416,6 +1416,156 @@ final class AuroraKitTests: XCTestCase {
             ]
         )
         let core = MockPacketTunnelCore(ingestError: AuroraClientError.unavailable)
+        let failures = MockTerminationRecorder()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core,
+            onTerminalFailure: { failure in
+                Task {
+                    await failures.record(failure)
+                }
+            }
+        )
+
+        try await runtime.start()
+        let termination = await runtime.runUntilStopped()
+
+        let closed = await core.closed
+        for _ in 0..<20 {
+            if !(await failures.recordedFailures).isEmpty {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let recordedFailures = await failures.recordedFailures
+        XCTAssertEqual(termination, .packetPumpFailed)
+        XCTAssertEqual(recordedFailures, [.packetPumpFailed])
+        XCTAssertTrue(closed)
+    }
+
+    func testPacketTunnelRuntimeReportsOutputPumpFailureOnce() async throws {
+        let packetFlow = MockBlockingPacketFlow()
+        let core = MockFailingOutputPacketTunnelCore()
+        let failures = MockTerminationRecorder()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core,
+            onTerminalFailure: { failure in
+                Task {
+                    await failures.record(failure)
+                }
+            }
+        )
+
+        try await runtime.start()
+        let terminationTask = Task {
+            await runtime.runUntilStopped()
+        }
+        for _ in 0..<20 {
+            if !(await failures.recordedFailures).isEmpty {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        await packetFlow.finish()
+
+        let termination = await terminationTask.value
+        let closed = await core.closed
+        let recordedFailures = await failures.recordedFailures
+        XCTAssertEqual(termination, .outputPumpFailed)
+        XCTAssertEqual(recordedFailures, [.outputPumpFailed])
+        XCTAssertTrue(closed)
+    }
+
+    func testPacketTunnelRuntimeReportsInboundPacketInjectionFailure() async throws {
+        let packetFlow = MockPacketFlow(batches: [
+            AuroraPacketFlowBatch(
+                packets: [Data([0x45, 0x00, 0x00, 0x14])],
+                protocolNumbers: [2]
+            ),
+        ], writeResult: false)
+        let core = MockPacketTunnelCore(outboundPackets: [
+            AuroraPacketFlowBatch(
+                packets: [Data([0x45, 0x00, 0x00, 0x15])],
+                protocolNumbers: [2]
+            ),
+        ])
+        let failures = MockTerminationRecorder()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core,
+            onTerminalFailure: { failure in
+                Task {
+                    await failures.record(failure)
+                }
+            }
+        )
+
+        try await runtime.start()
+        let processed = try await runtime.processNextBatch()
+        let termination = await runtime.runUntilStopped()
+
+        let closed = await core.closed
+        for _ in 0..<20 {
+            if !(await failures.recordedFailures).isEmpty {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let recordedFailures = await failures.recordedFailures
+        XCTAssertFalse(processed)
+        XCTAssertEqual(termination, .packetInjectionFailed)
+        XCTAssertEqual(recordedFailures, [.packetInjectionFailed])
+        XCTAssertTrue(closed)
+    }
+
+    func testPacketTunnelRuntimeReportsNativeOutputPacketInjectionFailure() async throws {
+        let packetFlow = MockBlockingPacketFlow(writeResult: false)
+        let core = MockStreamingPacketTunnelCore(output: AuroraPacketFlowBatch(
+            packets: [Data([0x60, 0x00, 0x00, 0x00])],
+            protocolNumbers: [30]
+        ))
+        let failures = MockTerminationRecorder()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core,
+            onTerminalFailure: { failure in
+                Task {
+                    await failures.record(failure)
+                }
+            }
+        )
+
+        try await runtime.start()
+        let terminationTask = Task {
+            await runtime.runUntilStopped()
+        }
+        for _ in 0..<20 {
+            if !(await failures.recordedFailures).isEmpty {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        await packetFlow.finish()
+
+        let termination = await terminationTask.value
+        let recordedFailures = await failures.recordedFailures
+        XCTAssertEqual(termination, .packetInjectionFailed)
+        XCTAssertEqual(recordedFailures, [.packetInjectionFailed])
+    }
+
+    func testPacketTunnelRuntimeDoesNotInjectPacketsAfterStopDuringPacketRead() async throws {
+        let packetFlow = MockBlockingPacketFlow()
+        let core = MockPacketTunnelCore(outboundPackets: [
+            AuroraPacketFlowBatch(
+                packets: [Data([0x45, 0x00, 0x00, 0x15])],
+                protocolNumbers: [2]
+            ),
+        ])
         let runtime = AuroraPacketTunnelRuntime(
             configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
             packetFlow: packetFlow,
@@ -1423,10 +1573,323 @@ final class AuroraKitTests: XCTestCase {
         )
 
         try await runtime.start()
-        await runtime.runUntilStopped()
+        let terminationTask = Task {
+            await runtime.runUntilStopped()
+        }
+        for _ in 0..<20 {
+            if await packetFlow.hasPendingRead {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        await runtime.stop()
+        await packetFlow.resume(AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        ))
+
+        let termination = await terminationTask.value
+        let ingestedPackets = await core.ingestedPackets
+        let writtenBatches = await packetFlow.writtenBatches
+        XCTAssertEqual(termination, .stopped)
+        XCTAssertTrue(ingestedPackets.isEmpty)
+        XCTAssertTrue(writtenBatches.isEmpty)
+    }
+
+    func testPacketTunnelRuntimeDoesNotInjectNativeOutputAfterStopDuringRead() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockBlockingOutputPacketTunnelCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        await runtime.activatePacketFlow()
+        for _ in 0..<20 {
+            if await core.hasPendingOutboundRead {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        await runtime.stop()
+        await core.resumeOutbound(AuroraPacketFlowBatch(
+            packets: [Data([0x60, 0x00, 0x00, 0x00])],
+            protocolNumbers: [30]
+        ))
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        let writtenBatches = await packetFlow.writtenBatches
+        XCTAssertTrue(writtenBatches.isEmpty)
+    }
+
+    func testPacketTunnelRuntimeDrainsInboundWriteBeforeStopCompletes() async throws {
+        let packetFlow = MockBlockingWritePacketFlow(batches: [
+            AuroraPacketFlowBatch(
+                packets: [Data([0x45, 0x00, 0x00, 0x14])],
+                protocolNumbers: [2]
+            ),
+        ])
+        let core = MockPacketTunnelCore(outboundPackets: [
+            AuroraPacketFlowBatch(
+                packets: [Data([0x45, 0x00, 0x00, 0x15])],
+                protocolNumbers: [2]
+            ),
+        ])
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        let processingTask = Task {
+            try await runtime.processNextBatch()
+        }
+        for _ in 0..<20 {
+            if await packetFlow.hasPendingWrite {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let stopFinished = DispatchSemaphore(value: 0)
+        Task {
+            await runtime.stop()
+            stopFinished.signal()
+        }
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 0.1), .timedOut)
+
+        await packetFlow.resumeWrite(success: true)
+        _ = try await processingTask.value
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 1), .success)
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        let writtenBatches = await packetFlow.writtenBatches
+        XCTAssertEqual(writtenBatches.map(\.packets), [[Data([0x45, 0x00, 0x00, 0x15])]])
+    }
+
+    func testPacketTunnelRuntimeDrainsNativeOutputWriteBeforeStopCompletes() async throws {
+        let packetFlow = MockBlockingWritePacketFlow(batches: [])
+        let core = MockStreamingPacketTunnelCore(output: AuroraPacketFlowBatch(
+            packets: [Data([0x60, 0x00, 0x00, 0x00])],
+            protocolNumbers: [30]
+        ))
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        await runtime.activatePacketFlow()
+        for _ in 0..<20 {
+            if await packetFlow.hasPendingWrite {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let stopFinished = DispatchSemaphore(value: 0)
+        Task {
+            await runtime.stop()
+            stopFinished.signal()
+        }
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 0.1), .timedOut)
+
+        await packetFlow.resumeWrite(success: true)
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 1), .success)
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        let writtenBatches = await packetFlow.writtenBatches
+        XCTAssertEqual(writtenBatches.map(\.protocolNumbers), [[30]])
+    }
+
+    func testPacketTunnelRuntimeWaitsForCanceledStartAndClosesEstablishedCore() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockBlockingConnectPacketTunnelCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        let startTask = Task { () -> Result<Void, any Error> in
+            do {
+                try await runtime.start()
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }
+        for _ in 0..<20 {
+            if await core.hasPendingConnect {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let stopFinished = DispatchSemaphore(value: 0)
+        Task {
+            await runtime.stop()
+            stopFinished.signal()
+        }
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 0.1), .timedOut)
+
+        await core.resumeConnect()
+        let startResult = await startTask.value
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 1), .success)
+
+        guard case .failure(let error) = startResult else {
+            return XCTFail("canceled start unexpectedly succeeded")
+        }
+        XCTAssertTrue(error is CancellationError)
+        let connected = await core.connected
+        let establishedCloseCount = await core.establishedCloseCount
+        XCTAssertFalse(connected)
+        XCTAssertEqual(establishedCloseCount, 1)
+    }
+
+    func testPacketTunnelRuntimeDoesNotReportIntentionalStopAsFailure() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockPacketTunnelCore()
+        let failures = MockTerminationRecorder()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core,
+            onTerminalFailure: { failure in
+                Task {
+                    await failures.record(failure)
+                }
+            }
+        )
+
+        try await runtime.start()
+        await runtime.stop()
+        let termination = await runtime.runUntilStopped()
 
         let closed = await core.closed
+        let recordedFailures = await failures.recordedFailures
+        XCTAssertEqual(termination, .stopped)
+        XCTAssertTrue(recordedFailures.isEmpty)
         XCTAssertTrue(closed)
+    }
+
+    func testPacketTunnelLifecycleRejectsStartupSuccessAfterStop() {
+        let lifecycle = AuroraPacketTunnelLifecycle()
+        let generation = lifecycle.beginStartup()
+
+        lifecycle.requestStop()
+
+        XCTAssertFalse(lifecycle.completeStartup(generation, delivering: {}))
+        XCTAssertFalse(lifecycle.claimTerminalFailure(generation, delivering: {}))
+    }
+
+    func testPacketTunnelLifecycleSuppressesFailuresAfterIntentionalStop() {
+        let lifecycle = AuroraPacketTunnelLifecycle()
+        let generation = lifecycle.beginStartup()
+
+        XCTAssertTrue(lifecycle.completeStartup(generation, delivering: {}))
+        lifecycle.requestStop()
+        XCTAssertFalse(lifecycle.claimTerminalFailure(generation, delivering: {}))
+    }
+
+    func testPacketTunnelLifecycleRejectsStaleGeneration() {
+        let lifecycle = AuroraPacketTunnelLifecycle()
+        let staleGeneration = lifecycle.beginStartup()
+        let currentGeneration = lifecycle.beginStartup()
+
+        XCTAssertFalse(lifecycle.completeStartup(staleGeneration, delivering: {}))
+        XCTAssertTrue(lifecycle.completeStartup(currentGeneration, delivering: {}))
+        XCTAssertFalse(lifecycle.claimTerminalFailure(staleGeneration, delivering: {}))
+        XCTAssertTrue(lifecycle.claimTerminalFailure(currentGeneration, delivering: {}))
+    }
+
+    func testPacketTunnelLifecycleSerializesStopWithStartupDelivery() {
+        let lifecycle = AuroraPacketTunnelLifecycle()
+        let generation = lifecycle.beginStartup()
+        let deliveryEntered = DispatchSemaphore(value: 0)
+        let allowDeliveryToReturn = DispatchSemaphore(value: 0)
+        let startupFinished = DispatchSemaphore(value: 0)
+        let stopFinished = DispatchSemaphore(value: 0)
+
+        DispatchQueue.global().async {
+            _ = lifecycle.completeStartup(generation, delivering: {
+                deliveryEntered.signal()
+                allowDeliveryToReturn.wait()
+            })
+            startupFinished.signal()
+        }
+        XCTAssertEqual(deliveryEntered.wait(timeout: .now() + 1), .success)
+
+        DispatchQueue.global().async {
+            lifecycle.requestStop()
+            stopFinished.signal()
+        }
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 0.1), .timedOut)
+
+        allowDeliveryToReturn.signal()
+        XCTAssertEqual(startupFinished.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 1), .success)
+        XCTAssertFalse(lifecycle.claimTerminalFailure(generation, delivering: {}))
+    }
+
+    func testPacketTunnelLifecycleSerializesStopWithTerminalFailureDelivery() {
+        let lifecycle = AuroraPacketTunnelLifecycle()
+        let generation = lifecycle.beginStartup()
+        XCTAssertTrue(lifecycle.completeStartup(generation, delivering: {}))
+        let deliveryEntered = DispatchSemaphore(value: 0)
+        let allowDeliveryToReturn = DispatchSemaphore(value: 0)
+        let terminalFailureFinished = DispatchSemaphore(value: 0)
+        let stopFinished = DispatchSemaphore(value: 0)
+
+        DispatchQueue.global().async {
+            _ = lifecycle.claimTerminalFailure(generation, delivering: {
+                deliveryEntered.signal()
+                allowDeliveryToReturn.wait()
+            })
+            terminalFailureFinished.signal()
+        }
+        XCTAssertEqual(deliveryEntered.wait(timeout: .now() + 1), .success)
+
+        DispatchQueue.global().async {
+            lifecycle.requestStop()
+            stopFinished.signal()
+        }
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 0.1), .timedOut)
+
+        allowDeliveryToReturn.signal()
+        XCTAssertEqual(terminalFailureFinished.wait(timeout: .now() + 1), .success)
+        XCTAssertEqual(stopFinished.wait(timeout: .now() + 1), .success)
+        XCTAssertFalse(lifecycle.claimTerminalFailure(generation, delivering: {}))
+    }
+
+    func testPacketTunnelLifecycleRejectsPathObservationAfterStop() {
+        let lifecycle = AuroraPacketTunnelLifecycle()
+        let generation = lifecycle.beginStartup()
+        var activated = false
+
+        lifecycle.requestStop()
+
+        XCTAssertFalse(lifecycle.beginPathObservation(generation, activating: {
+            activated = true
+        }))
+        XCTAssertFalse(activated)
+    }
+
+    func testPacketTunnelStartupGateWaitsForSetupQuiescence() async throws {
+        let gate = AuroraPacketTunnelStartupGate()
+        gate.begin(1)
+        let waitFinished = DispatchSemaphore(value: 0)
+
+        Task {
+            await gate.waitForQuiescence()
+            waitFinished.signal()
+        }
+        XCTAssertEqual(waitFinished.wait(timeout: .now() + 0.1), .timedOut)
+
+        gate.finish(1)
+        XCTAssertEqual(waitFinished.wait(timeout: .now() + 1), .success)
+        await gate.waitForQuiescence()
     }
 
     func testPacketBatchCodecMatchesServerVector() throws {
@@ -2000,6 +2463,56 @@ final class AuroraKitTests: XCTestCase {
             startRange.lowerBound,
             settingsRange.lowerBound,
             "packet tunnel provider should connect the core before installing route and DNS settings"
+        )
+    }
+
+    func testPacketTunnelProviderCancelsEstablishedTunnelOnRuntimeFailure() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let provider = try String(
+            contentsOf: root.appendingPathComponent("SharedNetworkExtension/PacketTunnelProvider.swift"),
+            encoding: .utf8
+        )
+
+        let completionRange = try XCTUnwrap(provider.range(of: "completion(nil)"))
+        let runRange = try XCTUnwrap(provider.range(of: "await runtime.runUntilStopped()"))
+        let stopRange = try XCTUnwrap(provider.range(of: "lifecycle.requestStop {"))
+        let cancellationRange = try XCTUnwrap(provider.range(of: "runtimeTask?.cancel()"))
+        let runtimeStopRange = try XCTUnwrap(provider.range(of: "await runtime?.stop()"))
+        let setupWaitRange = try XCTUnwrap(provider.range(of: "await startupGate.waitForQuiescence()"))
+        XCTAssertTrue(
+            provider.contains("cancelTunnelWithError(failure)"),
+            "provider should cancel an established tunnel when the runtime fails"
+        )
+        XCTAssertTrue(
+            provider.contains("lifecycle.completeStartup(generation, delivering:"),
+            "provider should atomically reject startup success after a stop request"
+        )
+        XCTAssertTrue(
+            provider.contains("lifecycle.beginPathObservation(generation, activating:"),
+            "a canceled startup should not start the path observer"
+        )
+        XCTAssertTrue(
+            provider.contains("startupGate.begin(generation)"),
+            "provider should track setup before starting asynchronous work"
+        )
+        XCTAssertFalse(
+            provider.contains("await runtime.activatePacketFlow()"),
+            "provider should not start the packet pump before startup completion"
+        )
+        XCTAssertGreaterThan(
+            runRange.lowerBound,
+            completionRange.lowerBound,
+            "provider should enter the runtime pump only after the tunnel has become active"
+        )
+        XCTAssertGreaterThan(
+            cancellationRange.lowerBound,
+            stopRange.lowerBound,
+            "provider should latch stop intent before cancelling its runtime task"
+        )
+        XCTAssertGreaterThan(
+            setupWaitRange.lowerBound,
+            runtimeStopRange.lowerBound,
+            "provider should await setup quiescence before completing stop"
         )
     }
 
@@ -2661,6 +3174,65 @@ private actor MockTunnelManager: AuroraTunnelManager {
 
 private actor MockPacketFlow: AuroraPacketFlow {
     private var batches: [AuroraPacketFlowBatch]
+    private let writeResult: Bool
+    private(set) var writtenBatches: [AuroraPacketFlowBatch] = []
+
+    init(batches: [AuroraPacketFlowBatch], writeResult: Bool = true) {
+        self.batches = batches
+        self.writeResult = writeResult
+    }
+
+    func readPacketBatch() async -> AuroraPacketFlowBatch? {
+        guard !batches.isEmpty else {
+            return nil
+        }
+        return batches.removeFirst()
+    }
+
+    func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool {
+        writtenBatches.append(batch)
+        return writeResult
+    }
+}
+
+private actor MockBlockingPacketFlow: AuroraPacketFlow {
+    private var continuation: CheckedContinuation<AuroraPacketFlowBatch?, Never>?
+    private let writeResult: Bool
+    private(set) var writtenBatches: [AuroraPacketFlowBatch] = []
+
+    init(writeResult: Bool = true) {
+        self.writeResult = writeResult
+    }
+
+    func readPacketBatch() async -> AuroraPacketFlowBatch? {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool {
+        writtenBatches.append(batch)
+        return writeResult
+    }
+
+    func finish() {
+        resume(nil)
+    }
+
+    func resume(_ batch: AuroraPacketFlowBatch?) {
+        continuation?.resume(returning: batch)
+        continuation = nil
+    }
+
+    var hasPendingRead: Bool {
+        continuation != nil
+    }
+}
+
+private actor MockBlockingWritePacketFlow: AuroraPacketFlow {
+    private var batches: [AuroraPacketFlowBatch]
+    private var pendingWrite: AuroraPacketFlowBatch?
+    private var writeContinuation: CheckedContinuation<Bool, Never>?
     private(set) var writtenBatches: [AuroraPacketFlowBatch] = []
 
     init(batches: [AuroraPacketFlowBatch]) {
@@ -2675,8 +3247,70 @@ private actor MockPacketFlow: AuroraPacketFlow {
     }
 
     func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool {
-        writtenBatches.append(batch)
-        return true
+        await withCheckedContinuation { continuation in
+            pendingWrite = batch
+            writeContinuation = continuation
+        }
+    }
+
+    var hasPendingWrite: Bool {
+        writeContinuation != nil
+    }
+
+    func resumeWrite(success: Bool) {
+        if success, let pendingWrite {
+            writtenBatches.append(pendingWrite)
+        }
+        pendingWrite = nil
+        writeContinuation?.resume(returning: success)
+        writeContinuation = nil
+    }
+}
+
+private actor MockBlockingConnectPacketTunnelCore: AuroraPacketTunnelCore {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var connected = false
+    private(set) var establishedCloseCount = 0
+
+    var hasPendingConnect: Bool {
+        continuation != nil
+    }
+
+    func connect(configuration: AuroraConfiguration) async throws {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+        connected = true
+    }
+
+    func resumeConnect() {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        AuroraPacketFlowBatch(packets: [], protocolNumbers: [])
+    }
+
+    func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {}
+
+    func submitDNSMessage(_ message: AuroraDNSMessage) async throws {}
+
+    func submitSocketEvent(_ event: AuroraSocketEvent) async throws {}
+
+    func close() async {
+        if connected {
+            establishedCloseCount += 1
+        }
+        connected = false
+    }
+}
+
+private actor MockTerminationRecorder {
+    private(set) var recordedFailures: [AuroraPacketTunnelRuntimeTermination] = []
+
+    func record(_ failure: AuroraPacketTunnelRuntimeTermination) {
+        recordedFailures.append(failure)
     }
 }
 
@@ -2747,6 +3381,63 @@ private actor MockStreamingPacketTunnelCore: AuroraPacketTunnelCore, AuroraPacke
         }
         sentOutput = true
         return output
+    }
+
+    func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {}
+
+    func submitDNSMessage(_ message: AuroraDNSMessage) async throws {}
+
+    func submitSocketEvent(_ event: AuroraSocketEvent) async throws {}
+
+    func close() async {}
+}
+
+private actor MockFailingOutputPacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketTunnelOutputCore {
+    private(set) var closed = false
+
+    func connect(configuration: AuroraConfiguration) async throws {}
+
+    func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        AuroraPacketFlowBatch(packets: [], protocolNumbers: [])
+    }
+
+    func nextOutboundPacketBatch() async throws -> AuroraPacketFlowBatch {
+        throw AuroraNativeTunnelError.unavailable
+    }
+
+    func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {}
+
+    func submitDNSMessage(_ message: AuroraDNSMessage) async throws {}
+
+    func submitSocketEvent(_ event: AuroraSocketEvent) async throws {}
+
+    func close() async {
+        closed = true
+    }
+}
+
+private actor MockBlockingOutputPacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketTunnelOutputCore {
+    private var continuation: CheckedContinuation<AuroraPacketFlowBatch, any Error>?
+
+    var hasPendingOutboundRead: Bool {
+        continuation != nil
+    }
+
+    func connect(configuration: AuroraConfiguration) async throws {}
+
+    func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        AuroraPacketFlowBatch(packets: [], protocolNumbers: [])
+    }
+
+    func nextOutboundPacketBatch() async throws -> AuroraPacketFlowBatch {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func resumeOutbound(_ batch: AuroraPacketFlowBatch) {
+        continuation?.resume(returning: batch)
+        continuation = nil
     }
 
     func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {}
