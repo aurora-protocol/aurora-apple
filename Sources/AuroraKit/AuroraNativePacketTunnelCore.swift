@@ -204,7 +204,7 @@ public protocol AuroraPacketTunnelOutputCore: AuroraPacketTunnelCore {
     func nextOutboundPacketBatch() async throws -> AuroraPacketFlowBatch
 }
 
-public actor AuroraNativePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketTunnelOutputCore {
+public actor AuroraNativePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketTunnelOutputCore, AuroraPacketTunnelRecoverableCore {
     private let provisioningStore: AuroraNativeProvisioningStore
     private let sessionDriver: any AuroraNativeSessionDriver
     private let issuerTransport: any AuroraNativeIssuerTransport

@@ -135,11 +135,13 @@ public struct AuroraNetworkPathChange: Equatable, Sendable {
     public var interface: String
     public var expensive: Bool
     public var constrained: Bool
+    public var available: Bool
 
-    public init(interface: String, expensive: Bool, constrained: Bool) {
+    public init(interface: String, expensive: Bool, constrained: Bool, available: Bool = true) {
         self.interface = interface
         self.expensive = expensive
         self.constrained = constrained
+        self.available = available
     }
 }
 
@@ -189,6 +191,8 @@ public protocol AuroraPacketTunnelCore: Sendable {
     func close() async
 }
 
+public protocol AuroraPacketTunnelRecoverableCore: AuroraPacketTunnelCore {}
+
 public protocol AuroraPacketExchangeClient: Sendable {
     func exchangePacketBatch(endpoint: URL, batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch
 }
@@ -199,6 +203,7 @@ public enum AuroraPacketTunnelRuntimeTermination: Error, Equatable, Sendable {
     case packetPumpFailed
     case outputPumpFailed
     case packetInjectionFailed
+    case networkPathRecoveryFailed
 }
 
 public actor AuroraPacketTunnelRuntime {
@@ -212,6 +217,10 @@ public actor AuroraPacketTunnelRuntime {
     private var outputTask: Task<Void, Never>?
     private var terminalFailure: AuroraPacketTunnelRuntimeTermination?
     private let packetFlowWriteGate = AuroraPacketFlowWriteGate()
+    private var packetFlowActivated = false
+    private var trafficSuspended = false
+    private var trafficGeneration: UInt64 = 0
+    private var trafficWaiters: [CheckedContinuation<Void, Never>] = []
     private var acceptsStart = true
     private var nextStartIdentifier: UInt64 = 0
     private var pendingStartIdentifier: UInt64?
@@ -254,10 +263,13 @@ public actor AuroraPacketTunnelRuntime {
             throw CancellationError()
         }
         running = true
+        trafficSuspended = false
+        trafficGeneration &+= 1
     }
 
     public func activatePacketFlow() {
-        guard running, outputTask == nil else {
+        packetFlowActivated = true
+        guard running, !trafficSuspended, outputTask == nil else {
             return
         }
         startOutputPumpIfSupported()
@@ -265,24 +277,37 @@ public actor AuroraPacketTunnelRuntime {
 
     @discardableResult
     public func processNextBatch() async throws -> Bool {
+        guard await waitForActiveTraffic() else {
+            return false
+        }
+        let generation = trafficGeneration
+        guard let inbound = await packetFlow.readPacketBatch() else {
+            guard running else {
+                return false
+            }
+            if trafficSuspended || trafficGeneration != generation {
+                return await waitForActiveTraffic()
+            }
+            return false
+        }
         guard running else {
             return false
         }
-        guard let inbound = await packetFlow.readPacketBatch(), running else {
-            return false
+        guard !trafficSuspended, trafficGeneration == generation else {
+            return true
         }
         guard inbound.packets.count == inbound.protocolNumbers.count else {
             return true
         }
         let outbound = try await core.ingestPacketBatch(inbound)
-        guard running else {
-            return false
+        guard running, !trafficSuspended, trafficGeneration == generation else {
+            return true
         }
         if !outbound.isEmpty, Self.canWriteToPacketFlow(outbound) {
             let writeSucceeded = await packetFlowWriteGate.write(outbound, to: packetFlow)
             guard writeSucceeded else {
-                guard running else {
-                    return false
+                guard running, !trafficSuspended, trafficGeneration == generation else {
+                    return true
                 }
                 await terminateDueToFailure(.packetInjectionFailed)
                 return false
@@ -316,6 +341,54 @@ public actor AuroraPacketTunnelRuntime {
         await core.notifyNetworkPathChange(change)
     }
 
+    public func supportsNetworkPathRecovery() -> Bool {
+        core is any AuroraPacketTunnelRecoverableCore
+    }
+
+    public func suspendForNetworkPathChange() async -> Bool {
+        guard core is any AuroraPacketTunnelRecoverableCore, running else {
+            return false
+        }
+        await suspendTrafficAndCloseCore()
+        return true
+    }
+
+    public func reconnectAfterNetworkPathChange() async throws -> Bool {
+        guard core is any AuroraPacketTunnelRecoverableCore, running, acceptsStart else {
+            return false
+        }
+        if !trafficSuspended {
+            await suspendTrafficAndCloseCore()
+        }
+        do {
+            try await core.connect(configuration: configuration)
+        } catch {
+            await terminateDueToFailure(.networkPathRecoveryFailed)
+            throw error
+        }
+        guard running, acceptsStart else {
+            await forceCloseCore()
+            return false
+        }
+        connected = true
+        coreClosed = false
+        await packetFlowWriteGate.open()
+        trafficSuspended = false
+        trafficGeneration &+= 1
+        resumeTrafficWaiters()
+        if packetFlowActivated {
+            startOutputPumpIfSupported()
+        }
+        return true
+    }
+
+    public func failNetworkPathRecovery() async {
+        guard running else {
+            return
+        }
+        await terminateDueToFailure(.networkPathRecoveryFailed)
+    }
+
     public func submitDNSMessage(_ message: AuroraDNSMessage) async throws {
         try await core.submitDNSMessage(message)
     }
@@ -327,6 +400,9 @@ public actor AuroraPacketTunnelRuntime {
     public func stop() async {
         acceptsStart = false
         running = false
+        trafficSuspended = true
+        trafficGeneration &+= 1
+        resumeTrafficWaiters()
         outputTask?.cancel()
         outputTask = nil
         await packetFlowWriteGate.close()
@@ -377,27 +453,61 @@ public actor AuroraPacketTunnelRuntime {
         }
     }
 
-    private func startOutputPumpIfSupported() {
-        guard let outputCore = core as? any AuroraPacketTunnelOutputCore else {
-            return
+    private func waitForActiveTraffic() async -> Bool {
+        guard running else {
+            return false
         }
-        outputTask?.cancel()
-        outputTask = Task { [weak self, outputCore] in
-            await self?.pumpOutboundPackets(from: outputCore)
+        guard trafficSuspended else {
+            return true
+        }
+        await withCheckedContinuation { continuation in
+            trafficWaiters.append(continuation)
+        }
+        return running && !trafficSuspended
+    }
+
+    private func resumeTrafficWaiters() {
+        let waiters = trafficWaiters
+        trafficWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
         }
     }
 
-    private func pumpOutboundPackets(from outputCore: any AuroraPacketTunnelOutputCore) async {
-        while running, !Task.isCancelled {
+    private func suspendTrafficAndCloseCore() async {
+        guard !trafficSuspended else {
+            return
+        }
+        trafficSuspended = true
+        trafficGeneration &+= 1
+        outputTask?.cancel()
+        outputTask = nil
+        await packetFlowWriteGate.close()
+        await closeCore()
+    }
+
+    private func startOutputPumpIfSupported() {
+        guard !trafficSuspended, let outputCore = core as? any AuroraPacketTunnelOutputCore else {
+            return
+        }
+        let generation = trafficGeneration
+        outputTask?.cancel()
+        outputTask = Task { [weak self, outputCore, generation] in
+            await self?.pumpOutboundPackets(from: outputCore, generation: generation)
+        }
+    }
+
+    private func pumpOutboundPackets(from outputCore: any AuroraPacketTunnelOutputCore, generation: UInt64) async {
+        while running, !trafficSuspended, trafficGeneration == generation, !Task.isCancelled {
             do {
                 let outbound = try await outputCore.nextOutboundPacketBatch()
-                guard running, !Task.isCancelled else {
+                guard running, !trafficSuspended, trafficGeneration == generation, !Task.isCancelled else {
                     return
                 }
                 if !outbound.isEmpty, Self.canWriteToPacketFlow(outbound) {
                     let writeSucceeded = await packetFlowWriteGate.write(outbound, to: packetFlow)
                     guard writeSucceeded else {
-                        guard running, !Task.isCancelled else {
+                        guard running, !trafficSuspended, trafficGeneration == generation, !Task.isCancelled else {
                             return
                         }
                         await terminateDueToFailure(.packetInjectionFailed)
@@ -405,7 +515,7 @@ public actor AuroraPacketTunnelRuntime {
                     }
                 }
             } catch {
-                guard running else {
+                guard running, !trafficSuspended, trafficGeneration == generation, !Task.isCancelled else {
                     return
                 }
                 await terminateDueToFailure(.outputPumpFailed)
@@ -421,6 +531,9 @@ public actor AuroraPacketTunnelRuntime {
         terminalFailure = failure
         acceptsStart = false
         running = false
+        trafficSuspended = true
+        trafficGeneration &+= 1
+        resumeTrafficWaiters()
         outputTask?.cancel()
         outputTask = nil
         await packetFlowWriteGate.close()

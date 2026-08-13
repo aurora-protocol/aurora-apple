@@ -17,6 +17,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let startupGate = AuroraPacketTunnelStartupGate()
     private var runtime: AuroraPacketTunnelRuntime?
     private var runtimeTask: Task<Void, Never>?
+    private var pathTransitionTracker: AuroraNetworkPathTransitionTracker?
+    private var pathOperationQueue: AuroraAsyncSerialQueue?
+    private var enqueuePathChange: (@Sendable (AuroraNetworkPathChange) async -> Void)?
 
     override func startTunnel(options: [String: NSObject]?, completionHandler: @escaping (Error?) -> Void) {
         let completion = StartTunnelCompletion(completionHandler)
@@ -28,6 +31,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         let serverClient = serverClient
         let packetFlow = NetworkExtensionPacketFlow(packetFlow: packetFlow)
         let pathObserver = pathObserver
+        let pathTransitionTracker = AuroraNetworkPathTransitionTracker()
+        let pathOperationQueue = AuroraAsyncSerialQueue()
         let core: any AuroraPacketTunnelCore
         if configuration.nativeProvisioningIdentifier != nil {
             core = AuroraNativePacketTunnelCore()
@@ -45,6 +50,23 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             }
         )
         self.runtime = runtime
+        self.pathTransitionTracker = pathTransitionTracker
+        self.pathOperationQueue = pathOperationQueue
+        let enqueuePathChange: @Sendable (AuroraNetworkPathChange) async -> Void = { [weak self, runtime] change in
+            guard let self else {
+                return
+            }
+            await pathOperationQueue.enqueue { [weak self, runtime] in
+                await self?.handleNetworkPathChange(
+                    change,
+                    generation: generation,
+                    configuration: configuration,
+                    runtime: runtime,
+                    tracker: pathTransitionTracker
+                )
+            }
+        }
+        self.enqueuePathChange = enqueuePathChange
 
         runtimeTask = Task {
             do {
@@ -56,18 +78,30 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 guard lifecycle.beginPathObservation(generation, activating: {
                     pathObserver.start { change in
                         Task {
-                            await runtime.notifyNetworkPathChange(change)
+                            await enqueuePathChange(change)
                         }
                     }
                 }) else {
                     throw CancellationError()
                 }
-                await runtime.notifyNetworkPathChange(pathObserver.currentChange())
+                let initialPath = pathObserver.currentChange()
+                await enqueuePathChange(initialPath)
+                await pathOperationQueue.waitForQuiescence()
                 guard lifecycle.completeStartup(generation, delivering: {
                     completion(nil)
                 }) else {
                     throw CancellationError()
                 }
+                await pathOperationQueue.enqueue { [weak self, runtime] in
+                    let action = await pathTransitionTracker.takeDeferredAction()
+                    await self?.performNetworkPathTransition(
+                        action,
+                        generation: generation,
+                        configuration: configuration,
+                        runtime: runtime
+                    )
+                }
+                await pathOperationQueue.waitForQuiescence()
                 startupGate.finish(generation)
                 await runtime.runUntilStopped()
             } catch {
@@ -89,6 +123,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         runtimeTask?.cancel()
         runtimeTask = nil
         self.runtime = nil
+        pathTransitionTracker = nil
+        pathOperationQueue = nil
+        enqueuePathChange = nil
         Task {
             await runtime?.stop()
             await startupGate.waitForQuiescence()
@@ -98,26 +135,110 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
     override func sleep(completionHandler: @escaping () -> Void) {
         let completion = StopTunnelCompletion(completionHandler)
+        let enqueuePathChange = enqueuePathChange
         let runtime = runtime
         Task {
-            await runtime?.notifyNetworkPathChange(
-                AuroraNetworkPathChange(interface: "sleep", expensive: false, constrained: false)
-            )
+            let change = AuroraNetworkPathChange(interface: "sleep", expensive: false, constrained: false, available: false)
+            if let enqueuePathChange {
+                await enqueuePathChange(change)
+            } else {
+                await runtime?.notifyNetworkPathChange(change)
+            }
             completion()
         }
     }
 
     override func wake() {
+        let enqueuePathChange = enqueuePathChange
         let runtime = runtime
         let pathObserver = pathObserver
         Task {
-            await runtime?.notifyNetworkPathChange(pathObserver.currentChange())
+            let change = pathObserver.currentChange()
+            if let enqueuePathChange {
+                await enqueuePathChange(change)
+            } else {
+                await runtime?.notifyNetworkPathChange(change)
+            }
         }
     }
 
     private func resolvedConfiguration() -> AuroraConfiguration {
         let providerConfiguration = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration
         return configurationResolver.configuration(providerConfiguration: providerConfiguration)
+    }
+
+    private func handleNetworkPathChange(
+        _ change: AuroraNetworkPathChange,
+        generation: UInt64,
+        configuration: AuroraConfiguration,
+        runtime: AuroraPacketTunnelRuntime,
+        tracker: AuroraNetworkPathTransitionTracker
+    ) async {
+        let action = await tracker.record(change)
+        await runtime.notifyNetworkPathChange(change)
+        guard action != .none else {
+            return
+        }
+        guard lifecycle.isStarted(generation) else {
+            await tracker.deferUntilStartupCompletes(action)
+            return
+        }
+        await performNetworkPathTransition(
+            action,
+            generation: generation,
+            configuration: configuration,
+            runtime: runtime
+        )
+    }
+
+    private func performNetworkPathTransition(
+        _ action: AuroraNetworkPathTransitionAction,
+        generation: UInt64,
+        configuration: AuroraConfiguration,
+        runtime: AuroraPacketTunnelRuntime
+    ) async {
+        guard action != .none, lifecycle.isStarted(generation) else {
+            return
+        }
+        let supportsRecovery = await runtime.supportsNetworkPathRecovery()
+        switch action {
+        case .none:
+            return
+        case .suspend:
+            guard supportsRecovery else {
+                return
+            }
+            reasserting = true
+            _ = await runtime.suspendForNetworkPathChange()
+        case .recover:
+            if supportsRecovery {
+                reasserting = true
+                _ = await runtime.suspendForNetworkPathChange()
+            }
+            do {
+                let tunnelConfiguration = try await endpointResolver.resolve(
+                    AuroraPacketTunnelConfiguration(configuration: configuration)
+                )
+                guard lifecycle.isStarted(generation) else {
+                    return
+                }
+                try await applyTunnelNetworkSettings(networkSettings(for: tunnelConfiguration))
+                guard lifecycle.isStarted(generation) else {
+                    return
+                }
+                if supportsRecovery {
+                    let recovered = try await runtime.reconnectAfterNetworkPathChange()
+                    if recovered {
+                        reasserting = false
+                    }
+                }
+            } catch {
+                guard lifecycle.isStarted(generation) else {
+                    return
+                }
+                await runtime.failNetworkPathRecovery()
+            }
+        }
     }
 
     private func applyTunnelNetworkSettings(_ settings: NEPacketTunnelNetworkSettings) async throws {
@@ -232,7 +353,7 @@ private final class NetworkPathObserver: @unchecked Sendable {
         let path = monitor?.currentPath
         lock.unlock()
         guard let path else {
-            return AuroraNetworkPathChange(interface: "unknown", expensive: false, constrained: false)
+            return AuroraNetworkPathChange(interface: "unknown", expensive: false, constrained: false, available: false)
         }
         return Self.change(for: path)
     }
@@ -241,7 +362,8 @@ private final class NetworkPathObserver: @unchecked Sendable {
         AuroraNetworkPathChange(
             interface: interfaceName(for: path),
             expensive: path.isExpensive,
-            constrained: path.isConstrained
+            constrained: path.isConstrained,
+            available: path.status == .satisfied
         )
     }
 

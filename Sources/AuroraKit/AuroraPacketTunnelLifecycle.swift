@@ -69,6 +69,75 @@ public final class AuroraPacketTunnelLifecycle: @unchecked Sendable {
         observer()
         return true
     }
+
+    public func isStarted(_ expectedGeneration: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard case .started(expectedGeneration) = state else {
+            return false
+        }
+        return true
+    }
+}
+
+public enum AuroraNetworkPathTransitionAction: Equatable, Sendable {
+    case none
+    case suspend
+    case recover
+}
+
+public actor AuroraNetworkPathTransitionTracker {
+    private var lastChange: AuroraNetworkPathChange?
+    private var deferredAction: AuroraNetworkPathTransitionAction = .none
+
+    public init() {}
+
+    public func record(_ change: AuroraNetworkPathChange) -> AuroraNetworkPathTransitionAction {
+        let previous = lastChange
+        lastChange = change
+        guard let previous else {
+            return change.available ? .none : .suspend
+        }
+        guard previous != change else {
+            return .none
+        }
+        return change.available ? .recover : .suspend
+    }
+
+    public func deferUntilStartupCompletes(_ action: AuroraNetworkPathTransitionAction) {
+        guard action != .none else {
+            return
+        }
+        deferredAction = action
+    }
+
+    public func takeDeferredAction() -> AuroraNetworkPathTransitionAction {
+        defer { deferredAction = .none }
+        return deferredAction
+    }
+}
+
+public actor AuroraAsyncSerialQueue {
+    private var tail: Task<Void, Never>?
+
+    public init() {}
+
+    public func enqueue(_ operation: @escaping @Sendable () async -> Void) {
+        let previous = tail
+        let task = Task {
+            if let previous {
+                await previous.value
+            }
+            await operation()
+        }
+        tail = task
+    }
+
+    public func waitForQuiescence() async {
+        if let tail {
+            await tail.value
+        }
+    }
 }
 
 public final class AuroraPacketTunnelStartupGate: @unchecked Sendable {

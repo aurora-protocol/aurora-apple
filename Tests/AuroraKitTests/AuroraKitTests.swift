@@ -1368,6 +1368,191 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(closed)
     }
 
+    func testNetworkPathTransitionTrackerRequestsOnlyActionableChanges() async {
+        let tracker = AuroraNetworkPathTransitionTracker()
+        let wifi = AuroraNetworkPathChange(interface: "wifi", expensive: false, constrained: false)
+        let unavailableWiFi = AuroraNetworkPathChange(
+            interface: "wifi",
+            expensive: false,
+            constrained: false,
+            available: false
+        )
+        let cellular = AuroraNetworkPathChange(interface: "cellular", expensive: true, constrained: false)
+
+        let actions = [
+            await tracker.record(wifi),
+            await tracker.record(wifi),
+            await tracker.record(unavailableWiFi),
+            await tracker.record(unavailableWiFi),
+            await tracker.record(wifi),
+            await tracker.record(cellular),
+        ]
+        XCTAssertEqual(actions, [.none, .none, .suspend, .none, .recover, .recover])
+
+        await tracker.deferUntilStartupCompletes(.recover)
+        let deferredAction = await tracker.takeDeferredAction()
+        let clearedAction = await tracker.takeDeferredAction()
+        XCTAssertEqual(deferredAction, .recover)
+        XCTAssertEqual(clearedAction, .none)
+    }
+
+    func testPacketTunnelRuntimeSuspendsAndRecoversRecoverableCore() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockRecoverablePacketTunnelCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        let suspended = await runtime.suspendForNetworkPathChange()
+        let recovered = try await runtime.reconnectAfterNetworkPathChange()
+        let connectCount = await core.connectCount
+        let closeCount = await core.closeCount
+
+        XCTAssertTrue(suspended)
+        XCTAssertTrue(recovered)
+        XCTAssertEqual(connectCount, 2)
+        XCTAssertEqual(closeCount, 1)
+
+        await runtime.stop()
+        let finalCloseCount = await core.closeCount
+        XCTAssertEqual(finalCloseCount, 2)
+    }
+
+    func testPacketTunnelRuntimeLeavesNonRecoverableCoreActiveOnNetworkPathChange() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockPacketTunnelCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        let suspended = await runtime.suspendForNetworkPathChange()
+        let recovered = try await runtime.reconnectAfterNetworkPathChange()
+        let closed = await core.closed
+        XCTAssertFalse(suspended)
+        XCTAssertFalse(recovered)
+        XCTAssertFalse(closed)
+
+        await runtime.stop()
+    }
+
+    func testPacketTunnelRuntimeDropsStaleIngressCompletionDuringNetworkRecovery() async throws {
+        let packetFlow = MockPacketFlow(batches: [
+            AuroraPacketFlowBatch(
+                packets: [Data([0x45, 0x00, 0x00, 0x14])],
+                protocolNumbers: [2]
+            ),
+        ])
+        let core = MockBlockingRecoverablePacketTunnelCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        let processingTask = Task { try await runtime.processNextBatch() }
+        for _ in 0..<20 {
+            if await core.hasPendingIngress {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let hasPendingIngress = await core.hasPendingIngress
+        XCTAssertTrue(hasPendingIngress)
+
+        let suspended = await runtime.suspendForNetworkPathChange()
+        await core.resumeIngress(with: AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x15])],
+            protocolNumbers: [2]
+        ))
+
+        let processed = try await processingTask.value
+        let writtenBatches = await packetFlow.writtenBatches
+        let recovered = try await runtime.reconnectAfterNetworkPathChange()
+        XCTAssertTrue(suspended)
+        XCTAssertTrue(processed)
+        XCTAssertTrue(writtenBatches.isEmpty)
+        XCTAssertTrue(recovered)
+        await runtime.stop()
+    }
+
+    func testPacketTunnelRuntimeDropsStaleNativeOutputDuringNetworkRecovery() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockBlockingRecoverableOutputCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+
+        try await runtime.start()
+        await runtime.activatePacketFlow()
+        for _ in 0..<20 {
+            if await core.hasPendingOutboundRead {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let hasPendingOutboundRead = await core.hasPendingOutboundRead
+        XCTAssertTrue(hasPendingOutboundRead)
+
+        let suspended = await runtime.suspendForNetworkPathChange()
+        await core.resumeOutbound(with: AuroraPacketFlowBatch(
+            packets: [Data([0x60, 0x00, 0x00, 0x00])],
+            protocolNumbers: [30]
+        ))
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        let writtenBatches = await packetFlow.writtenBatches
+        let recovered = try await runtime.reconnectAfterNetworkPathChange()
+        XCTAssertTrue(suspended)
+        XCTAssertTrue(writtenBatches.isEmpty)
+        XCTAssertTrue(recovered)
+        await runtime.stop()
+    }
+
+    func testPacketTunnelRuntimeReportsFailedNetworkRecoveryOnce() async throws {
+        let packetFlow = MockPacketFlow(batches: [])
+        let core = MockRecoverablePacketTunnelCore(failAfterFirstConnect: true)
+        let failures = MockTerminationRecorder()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core,
+            onTerminalFailure: { failure in
+                Task {
+                    await failures.record(failure)
+                }
+            }
+        )
+
+        try await runtime.start()
+        let suspended = await runtime.suspendForNetworkPathChange()
+        XCTAssertTrue(suspended)
+        do {
+            _ = try await runtime.reconnectAfterNetworkPathChange()
+            XCTFail("network recovery unexpectedly succeeded")
+        } catch {
+            XCTAssertNotNil(error)
+        }
+
+        for _ in 0..<20 {
+            if !(await failures.recordedFailures).isEmpty {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let recordedFailures = await failures.recordedFailures
+        XCTAssertEqual(recordedFailures, [.networkPathRecoveryFailed])
+        await runtime.stop()
+    }
+
     func testPacketTunnelRuntimeForwardsDNSMessagesAndSocketEvents() async throws {
         let packetFlow = MockPacketFlow(batches: [])
         let core = MockPacketTunnelCore()
@@ -2516,6 +2701,43 @@ final class AuroraKitTests: XCTestCase {
         )
     }
 
+    func testPacketTunnelProviderRecoversNativeCarrierAfterNetworkPathChanges() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let provider = try String(
+            contentsOf: root.appendingPathComponent("SharedNetworkExtension/PacketTunnelProvider.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(
+            provider.contains("AuroraNetworkPathTransitionTracker"),
+            "packet tunnel provider must distinguish initial, duplicate, unavailable, and changed paths"
+        )
+        XCTAssertTrue(
+            provider.contains("AuroraAsyncSerialQueue"),
+            "packet tunnel provider must serialize network-path recovery work"
+        )
+        XCTAssertTrue(
+            provider.contains("runtime.suspendForNetworkPathChange()"),
+            "packet tunnel provider must stop native carrier traffic before path recovery"
+        )
+        XCTAssertTrue(
+            provider.contains("runtime.reconnectAfterNetworkPathChange()"),
+            "packet tunnel provider must establish a fresh native carrier after a path change"
+        )
+        XCTAssertTrue(
+            provider.contains("reasserting = true"),
+            "packet tunnel provider must prevent packet forwarding while native recovery is in progress"
+        )
+        XCTAssertTrue(
+            provider.contains("AuroraNetworkPathChange(interface: \"sleep\", expensive: false, constrained: false, available: false)"),
+            "packet tunnel provider must suspend native carrier traffic before device sleep"
+        )
+        XCTAssertTrue(
+            provider.contains("await enqueuePathChange(change)"),
+            "packet tunnel provider must route path, sleep, and wake events through serialized recovery"
+        )
+    }
+
     func testPacketTunnelProviderInstallsIPv6Routes() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let provider = try String(
@@ -3359,6 +3581,102 @@ private actor MockPacketTunnelCore: AuroraPacketTunnelCore {
     func close() async {
         closed = true
     }
+}
+
+private actor MockRecoverablePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketTunnelRecoverableCore {
+    private let failAfterFirstConnect: Bool
+    private(set) var connectCount = 0
+    private(set) var closeCount = 0
+
+    init(failAfterFirstConnect: Bool = false) {
+        self.failAfterFirstConnect = failAfterFirstConnect
+    }
+
+    func connect(configuration: AuroraConfiguration) async throws {
+        connectCount += 1
+        if failAfterFirstConnect, connectCount > 1 {
+            throw AuroraNativeTunnelError.unavailable
+        }
+    }
+
+    func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        AuroraPacketFlowBatch(packets: [], protocolNumbers: [])
+    }
+
+    func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {}
+
+    func submitDNSMessage(_ message: AuroraDNSMessage) async throws {}
+
+    func submitSocketEvent(_ event: AuroraSocketEvent) async throws {}
+
+    func close() async {
+        closeCount += 1
+    }
+}
+
+private actor MockBlockingRecoverablePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketTunnelRecoverableCore {
+    private var ingressContinuation: CheckedContinuation<AuroraPacketFlowBatch, Never>?
+    private(set) var connectCount = 0
+
+    var hasPendingIngress: Bool {
+        ingressContinuation != nil
+    }
+
+    func connect(configuration: AuroraConfiguration) async throws {
+        connectCount += 1
+    }
+
+    func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        await withCheckedContinuation { continuation in
+            ingressContinuation = continuation
+        }
+    }
+
+    func resumeIngress(with batch: AuroraPacketFlowBatch) {
+        ingressContinuation?.resume(returning: batch)
+        ingressContinuation = nil
+    }
+
+    func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {}
+
+    func submitDNSMessage(_ message: AuroraDNSMessage) async throws {}
+
+    func submitSocketEvent(_ event: AuroraSocketEvent) async throws {}
+
+    func close() async {}
+}
+
+private actor MockBlockingRecoverableOutputCore: AuroraPacketTunnelCore, AuroraPacketTunnelOutputCore, AuroraPacketTunnelRecoverableCore {
+    private var outboundContinuation: CheckedContinuation<AuroraPacketFlowBatch, Never>?
+
+    var hasPendingOutboundRead: Bool {
+        outboundContinuation != nil
+    }
+
+    func connect(configuration: AuroraConfiguration) async throws {}
+
+    func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
+        AuroraPacketFlowBatch(packets: [], protocolNumbers: [])
+    }
+
+    func nextOutboundPacketBatch() async throws -> AuroraPacketFlowBatch {
+        await withCheckedContinuation { continuation in
+            outboundContinuation = continuation
+        }
+    }
+
+    func resumeOutbound(with batch: AuroraPacketFlowBatch) {
+        outboundContinuation?.resume(returning: batch)
+        outboundContinuation = nil
+    }
+
+    func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {}
+
+    func submitDNSMessage(_ message: AuroraDNSMessage) async throws {}
+
+    func submitSocketEvent(_ event: AuroraSocketEvent) async throws {}
+
+    func close() async {}
 }
 
 private actor MockStreamingPacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketTunnelOutputCore {
