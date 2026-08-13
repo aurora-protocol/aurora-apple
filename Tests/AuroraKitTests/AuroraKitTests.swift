@@ -1840,7 +1840,18 @@ final class AuroraKitTests: XCTestCase {
         }
 
         XCTAssertTrue(workflow.contains("scripts/aurora-apple-check.sh"), "CI should call the shared Apple readiness script")
-        XCTAssertTrue(workflow.contains("uses: actions/setup-go@v7"), "CI should use the Node 24 setup-go action")
+        let actionPins = [
+            ("uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09", 2),
+            ("uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e", 1),
+        ]
+        for (reference, expectedCount) in actionPins {
+            let count = workflow.components(separatedBy: reference).count - 1
+            XCTAssertEqual(count, expectedCount, "CI should use the expected immutable action pin")
+        }
+        XCTAssertNil(
+            workflow.range(of: "uses:\\s+[^@\\s]+@(v[0-9]+|main|master)", options: .regularExpression),
+            "CI should not use mutable action selectors"
+        )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
         XCTAssertTrue(readme.contains("scripts/aurora-apple-check.sh"), "README should document the shared Apple readiness script")

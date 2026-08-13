@@ -9,18 +9,18 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout aurora-apple
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           path: aurora-apple
       - name: Checkout aurora-core
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           # Public sibling repo; the default token clones it without a secret.
           repository: aurora-protocol/aurora-core
           ref: 1159f2adfe89ff5e8494db97197f39766f32777f
           path: aurora-core
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: aurora-core/go.mod
           cache-dependency-path: aurora-core/go.sum
