@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import AuroraKit
 
@@ -1840,13 +1841,7 @@ final class AuroraKitTests: XCTestCase {
         }
 
         XCTAssertTrue(workflow.contains("scripts/aurora-apple-check.sh"), "CI should call the shared Apple readiness script")
-        let actionReferences = workflow.split(separator: "\n").compactMap { line -> String? in
-            let fields = line.split(whereSeparator: \.isWhitespace)
-            guard let usesIndex = fields.firstIndex(of: "uses:"), usesIndex + 1 < fields.endIndex else {
-                return nil
-            }
-            return String(fields[usesIndex + 1])
-        }
+        let actionReferences = try workflowActionReferences(at: root.appendingPathComponent(".github/workflows/ci.yml"))
         let approvedActionReferences = [
             "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
             "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
@@ -2051,6 +2046,51 @@ final class AuroraKitTests: XCTestCase {
             XCTAssertTrue(info.contains(orientation), "iOS Info.plist missing \(orientation)")
         }
     }
+}
+
+private func workflowActionReferences(at workflowURL: URL) throws -> [String] {
+    let rubyURL = URL(fileURLWithPath: "/usr/bin/ruby")
+    guard FileManager.default.isExecutableFile(atPath: rubyURL.path) else {
+        throw NSError(domain: "AuroraKitTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Ruby YAML parser is unavailable"])
+    }
+
+    let script = #"""
+    require "yaml"
+
+    def collect_uses(value, references)
+      case value
+      when Hash
+        value.each do |key, child|
+          references << child if key == "uses" && child.is_a?(String)
+          collect_uses(child, references)
+        end
+      when Array
+        value.each { |child| collect_uses(child, references) }
+      end
+    end
+
+    workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: false)
+    references = []
+    collect_uses(workflow, references)
+    STDOUT.write(references.join("\0"))
+    """#
+    let process = Process()
+    let output = Pipe()
+    let error = Pipe()
+    process.executableURL = rubyURL
+    process.arguments = ["-e", script, workflowURL.path]
+    process.standardOutput = output
+    process.standardError = error
+    try process.run()
+    process.waitUntilExit()
+
+    guard process.terminationStatus == 0 else {
+        let message = String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        throw NSError(domain: "AuroraKitTests", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    let encoded = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    return encoded.isEmpty ? [] : encoded.components(separatedBy: "\0")
 }
 
 private final class MockPortableProfileStore: AuroraPortableProfileStore, @unchecked Sendable {
