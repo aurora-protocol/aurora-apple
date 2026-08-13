@@ -10,7 +10,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             appGroupIdentifier: AuroraAppleSharedContainer.appGroupIdentifier()
         )
     )
-    private let serverClient = URLSessionAuroraServerClient()
     private let endpointResolver = AuroraTunnelEndpointResolver()
     private let pathObserver = NetworkPathObserver()
     private let lifecycle = AuroraPacketTunnelLifecycle()
@@ -28,17 +27,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         let startupGate = startupGate
         startupGate.begin(generation)
         let configuration = resolvedConfiguration()
-        let serverClient = serverClient
+        guard configuration.nativeProvisioningIdentifier != nil else {
+            lifecycle.cancelStartup(generation)
+            completion(AuroraNativeTunnelError.invalidProvisioning)
+            startupGate.finish(generation)
+            return
+        }
         let packetFlow = NetworkExtensionPacketFlow(packetFlow: packetFlow)
         let pathObserver = pathObserver
         let pathTransitionTracker = AuroraNetworkPathTransitionTracker()
         let pathOperationQueue = AuroraAsyncSerialQueue()
-        let core: any AuroraPacketTunnelCore
-        if configuration.nativeProvisioningIdentifier != nil {
-            core = AuroraNativePacketTunnelCore()
-        } else {
-            core = AuroraServerBackedPacketTunnelCore(serverClient: serverClient)
-        }
+        let core: any AuroraPacketTunnelCore = AuroraNativePacketTunnelCore()
         let runtime = AuroraPacketTunnelRuntime(
             configuration: configuration,
             packetFlow: packetFlow,

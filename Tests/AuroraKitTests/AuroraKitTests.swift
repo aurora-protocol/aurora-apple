@@ -2621,6 +2621,7 @@ final class AuroraKitTests: XCTestCase {
         )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
+        XCTAssertTrue(workflow.contains("ref: 24b6fe6bedce0cf61b39558505448913fe79768c"), "CI should pin the merged Core revision")
         XCTAssertTrue(readme.contains("scripts/aurora-apple-check.sh"), "README should document the shared Apple readiness script")
         XCTAssertTrue(script.contains("swift test"), "Apple readiness script should run Swift package tests")
         XCTAssertTrue(script.contains("CODE_SIGNING_ALLOWED=NO"), "Apple readiness script should use unsigned local builds")
@@ -2744,6 +2745,19 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(provider.contains("endpointResolver.resolve"), "packet tunnel provider does not resolve relay endpoints before installing routes")
         XCTAssertTrue(provider.contains("AuroraUserDefaultsProfileStore"), "packet tunnel provider missing App Group profile store")
         XCTAssertTrue(provider.contains("AuroraAppleSharedContainer.appGroupIdentifier()"), "packet tunnel provider missing App Group scope")
+    }
+
+    func testPacketTunnelProviderRequiresNativeProvisioning() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let provider = try String(
+            contentsOf: root.appendingPathComponent("SharedNetworkExtension/PacketTunnelProvider.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(provider.contains("guard configuration.nativeProvisioningIdentifier != nil else"), "packet tunnel provider must fail closed without native provisioning")
+        XCTAssertTrue(provider.contains("AuroraNativeTunnelError.invalidProvisioning"), "packet tunnel provider missing invalid provisioning failure")
+        XCTAssertTrue(provider.contains("AuroraNativePacketTunnelCore()"), "packet tunnel provider must use the portable native core")
+        XCTAssertFalse(provider.contains("AuroraServerBackedPacketTunnelCore"), "packet tunnel provider must not fall back to the direct server-backed core")
     }
 
     func testPacketTunnelProviderConnectsCoreBeforeInstallingNetworkSettings() throws {
