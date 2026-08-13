@@ -1396,6 +1396,22 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(clearedAction, .none)
     }
 
+    func testAsyncSerialQueueDrainsOperationsInSubmissionOrder() async {
+        let queue = AuroraAsyncSerialQueue()
+        let recorder = MockAsyncOperationRecorder()
+
+        await queue.enqueue {
+            await recorder.append("first")
+        }
+        await queue.enqueue {
+            await recorder.append("second")
+        }
+        await queue.waitForQuiescence()
+
+        let values = await recorder.values
+        XCTAssertEqual(values, ["first", "second"])
+    }
+
     func testPacketTunnelRuntimeSuspendsAndRecoversRecoverableCore() async throws {
         let packetFlow = MockPacketFlow(batches: [])
         let core = MockRecoverablePacketTunnelCore()
@@ -3533,6 +3549,14 @@ private actor MockTerminationRecorder {
 
     func record(_ failure: AuroraPacketTunnelRuntimeTermination) {
         recordedFailures.append(failure)
+    }
+}
+
+private actor MockAsyncOperationRecorder {
+    private(set) var values: [String] = []
+
+    func append(_ value: String) {
+        values.append(value)
     }
 }
 
