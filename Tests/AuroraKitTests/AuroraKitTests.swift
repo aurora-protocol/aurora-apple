@@ -606,6 +606,27 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(Data(spendBody.dropFirst()), admissionProof)
     }
 
+    func testURLSessionIssuerClientRejectsOversizedCarrierResponse() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [IssuerURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = URLSessionAuroraServerClient(session: session)
+        IssuerURLProtocol.setResponses([
+            IssuerURLProtocol.Response(
+                path: "/assets/app.bin",
+                contentType: "application/octet-stream",
+                body: Data(repeating: 0xa5, count: (1 << 20) + 1)
+            ),
+        ])
+
+        do {
+            _ = try await client.fetchIssuerMetadata(endpoint: URL(string: "https://relay.example:9443")!)
+            XCTFail("oversized issuer response unexpectedly succeeded")
+        } catch {
+            XCTAssertEqual(error as? AuroraClientError, .unavailable)
+        }
+    }
+
     func testControllerIssuesAdmissionTokenAndStoresItInWallet() async throws {
         let store = MockSecureCredentialStore()
         let wallet = AuroraTokenWallet(credentialStore: store)
@@ -2396,6 +2417,29 @@ final class AuroraKitTests: XCTestCase {
         )
 
         XCTAssertEqual(exchanged, outbound)
+    }
+
+    func testURLSessionServerClientRejectsOversizedPacketResponse() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [PacketExchangeURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = URLSessionAuroraServerClient(session: session)
+        PacketExchangeURLProtocol.setResponse(
+            Data(repeating: 0xa6, count: AuroraPacketBatchCodec.maximumEncodedBytes + 1)
+        )
+
+        do {
+            _ = try await client.exchangePacketBatch(
+                endpoint: URL(string: "https://relay.example:9443")!,
+                batch: AuroraPacketFlowBatch(
+                    packets: [Data([0x45, 0x00, 0x00, 0x14])],
+                    protocolNumbers: [2]
+                )
+            )
+            XCTFail("oversized packet response unexpectedly succeeded")
+        } catch {
+            XCTAssertEqual(error as? AuroraClientError, .unavailable)
+        }
     }
 
     func testControllerInstallsAndStartsTunnelThroughInjectedManager() async {

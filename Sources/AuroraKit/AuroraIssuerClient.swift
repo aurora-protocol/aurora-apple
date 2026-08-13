@@ -137,16 +137,17 @@ public extension URLSessionAuroraServerClient {
         let url = endpoint
             .appendingPathComponent("assets")
             .appendingPathComponent("app.bin")
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
         request.httpMethod = "POST"
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         request.httpBody = body
 
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw AuroraClientError.unavailable
-        }
-        return data
+        return try await AuroraBoundedHTTPResponse.read(
+            session: session,
+            request: request,
+            maximumBytes: AuroraBoundedHTTPResponse.maximumIssuerResponseBytes
+        ) { $0.statusCode == 200 }
     }
 }
 

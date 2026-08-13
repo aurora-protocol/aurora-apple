@@ -21,6 +21,7 @@ public enum AuroraPacketBatchCodecError: Error, Equatable {
 public enum AuroraPacketBatchCodec {
     private static let maxPackets = 64
     private static let maxPacketBytes = 65_535
+    static let maximumEncodedBytes = 2 + (maxPackets * (2 + 4 + maxPacketBytes))
 
     public static func encode(_ batch: AuroraPacketFlowBatch) throws -> Data {
         guard batch.packets.count == batch.protocolNumbers.count,
