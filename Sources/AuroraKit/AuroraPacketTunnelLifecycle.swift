@@ -69,6 +69,93 @@ public final class AuroraPacketTunnelLifecycle: @unchecked Sendable {
         observer()
         return true
     }
+
+    public func isStarted(_ expectedGeneration: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard case .started(expectedGeneration) = state else {
+            return false
+        }
+        return true
+    }
+}
+
+public enum AuroraNetworkPathTransitionAction: Equatable, Sendable {
+    case none
+    case suspend
+    case recover
+}
+
+public actor AuroraNetworkPathTransitionTracker {
+    private var lastChange: AuroraNetworkPathChange?
+    private var deferredAction: AuroraNetworkPathTransitionAction = .none
+
+    public init() {}
+
+    public func record(_ change: AuroraNetworkPathChange) -> AuroraNetworkPathTransitionAction {
+        let previous = lastChange
+        lastChange = change
+        guard let previous else {
+            return change.available ? .none : .suspend
+        }
+        guard previous != change else {
+            return .none
+        }
+        return change.available ? .recover : .suspend
+    }
+
+    public func deferUntilStartupCompletes(_ action: AuroraNetworkPathTransitionAction) {
+        guard action != .none else {
+            return
+        }
+        deferredAction = action
+    }
+
+    public func takeDeferredAction() -> AuroraNetworkPathTransitionAction {
+        defer { deferredAction = .none }
+        return deferredAction
+    }
+}
+
+public actor AuroraAsyncSerialQueue {
+    private var pendingOperations: [@Sendable () async -> Void] = []
+    private var isDraining = false
+    private var quiescenceWaiters: [CheckedContinuation<Void, Never>] = []
+
+    public init() {}
+
+    public func enqueue(_ operation: @escaping @Sendable () async -> Void) {
+        pendingOperations.append(operation)
+        guard !isDraining else {
+            return
+        }
+        isDraining = true
+        Task { [weak self] in
+            await self?.drain()
+        }
+    }
+
+    public func waitForQuiescence() async {
+        guard isDraining || !pendingOperations.isEmpty else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            quiescenceWaiters.append(continuation)
+        }
+    }
+
+    private func drain() async {
+        while !pendingOperations.isEmpty {
+            let operation = pendingOperations.removeFirst()
+            await operation()
+        }
+        isDraining = false
+        let waiters = quiescenceWaiters
+        quiescenceWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
 }
 
 public final class AuroraPacketTunnelStartupGate: @unchecked Sendable {
