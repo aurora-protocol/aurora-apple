@@ -2621,6 +2621,7 @@ final class AuroraKitTests: XCTestCase {
         )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
+        XCTAssertTrue(workflow.contains("ref: 24b6fe6bedce0cf61b39558505448913fe79768c"), "CI should pin the merged Core revision")
         XCTAssertTrue(readme.contains("scripts/aurora-apple-check.sh"), "README should document the shared Apple readiness script")
         XCTAssertTrue(script.contains("swift test"), "Apple readiness script should run Swift package tests")
         XCTAssertTrue(script.contains("CODE_SIGNING_ALLOWED=NO"), "Apple readiness script should use unsigned local builds")
@@ -2719,6 +2720,9 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(view.contains("restoreNativeProvisioning"), "status view does not restore provisioning on launch")
         XCTAssertTrue(view.contains("removeNativeProvisioning"), "status view does not remove provisioning through the controller")
         XCTAssertTrue(view.contains("maximumBytes"), "status view must bound provisioning file input before loading it")
+        XCTAssertTrue(view.contains("FileHandle(forReadingFrom:"), "status view must open provisioning files through a bounded handle")
+        XCTAssertTrue(view.contains("read(upToCount: AuroraNativeProvisioningStore.maximumBytes + 1)"), "status view must read only one byte beyond the provisioning limit")
+        XCTAssertFalse(view.contains("Data(contentsOf: url"), "status view must not map an unbounded provisioning file")
     }
 
     func testSharedUIExposesRedactedDiagnostics() throws {
