@@ -21,7 +21,7 @@ jobs:
         with:
           # Public sibling repo; the default token clones it without a secret.
           repository: aurora-protocol/aurora-core
-          ref: 1159f2adfe89ff5e8494db97197f39766f32777f
+          ref: 77f8ef18f09dcf5804413594be57f67080332ed6
           path: aurora-core
           persist-credentials: false
       - name: Set up Go

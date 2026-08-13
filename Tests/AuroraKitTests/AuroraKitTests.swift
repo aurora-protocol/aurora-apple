@@ -2621,6 +2621,10 @@ final class AuroraKitTests: XCTestCase {
         )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
+        XCTAssertTrue(
+            workflow.contains("ref: 77f8ef18f09dcf5804413594be57f67080332ed6"),
+            "CI should pin the reviewed Core ABI revision"
+        )
         XCTAssertTrue(readme.contains("scripts/aurora-apple-check.sh"), "README should document the shared Apple readiness script")
         XCTAssertTrue(script.contains("swift test"), "Apple readiness script should run Swift package tests")
         XCTAssertTrue(script.contains("CODE_SIGNING_ALLOWED=NO"), "Apple readiness script should use unsigned local builds")
@@ -2628,6 +2632,19 @@ final class AuroraKitTests: XCTestCase {
         for scheme in ["AuroraMac", "AuroraIOS", "AuroraPacketTunnel_macOS", "AuroraPacketTunnel_iOS"] {
             XCTAssertTrue(script.contains("-scheme \(scheme)"), "Apple readiness script should build \(scheme)")
         }
+    }
+
+    func testCoreBridgeScrubsNativeResponsesBeforeRelease() throws {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let bridge = try String(
+            contentsOf: root.appendingPathComponent("Sources/AuroraKit/AuroraCoreBridge.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(
+            bridge.contains("AuroraCoreZeroFree(ptr, outLen)"),
+            "Core bridge should scrub native response buffers before releasing them"
+        )
     }
 
     func testProjectDeclaresPacketTunnelEntitlements() throws {

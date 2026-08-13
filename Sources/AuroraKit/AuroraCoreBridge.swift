@@ -278,7 +278,7 @@ enum AuroraCore {
             }
         }
         guard let ptr = raw else { return nil }
-        defer { AuroraCoreFree(ptr) }
+        defer { AuroraCoreZeroFree(ptr, outLen) }
         guard outLen >= 1, let status = Status(rawValue: ptr[0]) else { return nil }
         let payload = outLen > 1 ? Data(bytes: ptr + 1, count: Int(outLen) - 1) : Data()
         return Result(status: status, payload: payload)
