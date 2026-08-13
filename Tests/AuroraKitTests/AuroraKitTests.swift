@@ -1841,6 +1841,7 @@ final class AuroraKitTests: XCTestCase {
         }
 
         XCTAssertTrue(workflow.contains("scripts/aurora-apple-check.sh"), "CI should call the shared Apple readiness script")
+        XCTAssertTrue(workflow.contains("permissions:\n  contents: read"), "CI should grant only repository read access")
         let actionReferences = try workflowActionReferences(at: root.appendingPathComponent(".github/workflows/ci.yml"))
         let approvedActionReferences = [
             "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
