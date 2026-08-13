@@ -73,6 +73,23 @@ public protocol AuroraNativeProvisioningReserver: Sendable {
     ) async throws -> AuroraNativeProvisioningReservation
 }
 
+public protocol AuroraNativeProvisioningValidator: Sendable {
+    func validate(source: Data, now: Date) async throws
+}
+
+public struct AuroraCoreNativeProvisioningValidator: AuroraNativeProvisioningValidator {
+    public init() {}
+
+    public func validate(source: Data, now: Date) async throws {
+        let valid = await Task.detached {
+            AuroraCore.validateNativeProvisioningSource(source, now: now)
+        }.value
+        guard valid else {
+            throw AuroraNativeTunnelError.invalidProvisioning
+        }
+    }
+}
+
 public struct AuroraCoreNativeProvisioningReserver: AuroraNativeProvisioningReserver {
     public init() {}
 
@@ -147,13 +164,16 @@ public actor AuroraNativeProvisioningStore {
     private static let maximumReservationLedgerBytes = 16 << 10
 
     private let credentialStore: any AuroraSecureCredentialStore
+    private let validator: any AuroraNativeProvisioningValidator
     private let reserver: any AuroraNativeProvisioningReserver
 
     public init(
         credentialStore: any AuroraSecureCredentialStore = AuroraKeychainCredentialStore(),
+        validator: any AuroraNativeProvisioningValidator = AuroraCoreNativeProvisioningValidator(),
         reserver: any AuroraNativeProvisioningReserver = AuroraCoreNativeProvisioningReserver()
     ) {
         self.credentialStore = credentialStore
+        self.validator = validator
         self.reserver = reserver
     }
 
@@ -164,6 +184,7 @@ public actor AuroraNativeProvisioningStore {
         else {
             throw AuroraNativeTunnelError.invalidProvisioning
         }
+        try await validator.validate(source: provisioning, now: Date())
         try await credentialStore.save(provisioning, service: Self.service, account: Self.account(identifier: identifier))
         try await credentialStore.delete(service: Self.reservationService, account: Self.reservationAccount(identifier: identifier))
     }

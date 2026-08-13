@@ -175,7 +175,10 @@ final class AuroraKitTests: XCTestCase {
 
     func testControllerImportsNativeProvisioningIntoSecureStoreWithoutExportingIt() async throws {
         let credentialStore = MockSecureCredentialStore()
-        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore)
+        let provisioningStore = AuroraNativeProvisioningStore(
+            credentialStore: credentialStore,
+            validator: MockNativeProvisioningValidator()
+        )
         let profileStore = MockPortableProfileStore()
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
@@ -205,7 +208,10 @@ final class AuroraKitTests: XCTestCase {
 
     func testControllerRestoresAndRemovesNativeProvisioning() async throws {
         let credentialStore = MockSecureCredentialStore()
-        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore)
+        let provisioningStore = AuroraNativeProvisioningStore(
+            credentialStore: credentialStore,
+            validator: MockNativeProvisioningValidator()
+        )
         let provisioning = Data(repeating: 0xb8, count: 64)
         try await provisioningStore.save(provisioning)
         let controller = await AuroraClientController(
@@ -865,7 +871,8 @@ final class AuroraKitTests: XCTestCase {
 
     func testNativeProvisioningStoreKeepsOpaqueBundleInCredentialStore() async throws {
         let credentialStore = MockSecureCredentialStore()
-        let store = AuroraNativeProvisioningStore(credentialStore: credentialStore)
+        let validator = MockNativeProvisioningValidator()
+        let store = AuroraNativeProvisioningStore(credentialStore: credentialStore, validator: validator)
         let provisioning = Data(repeating: 0x7a, count: 64)
 
         try await store.save(provisioning, identifier: "production-slot")
@@ -880,6 +887,39 @@ final class AuroraKitTests: XCTestCase {
             stored,
             provisioning
         )
+        let validatedSources = await validator.validatedSources
+        XCTAssertEqual(validatedSources, [provisioning])
+    }
+
+    func testNativeProvisioningStoreRejectsInvalidSourceBeforeKeychainWrite() async throws {
+        let credentialStore = MockSecureCredentialStore()
+        let validator = MockNativeProvisioningValidator(error: AuroraNativeTunnelError.invalidProvisioning)
+        let store = AuroraNativeProvisioningStore(credentialStore: credentialStore, validator: validator)
+        let provisioning = Data(repeating: 0x7b, count: 64)
+
+        do {
+            try await store.save(provisioning, identifier: "production-slot")
+            XCTFail("invalid provisioning source was saved")
+        } catch {
+            XCTAssertEqual(error as? AuroraNativeTunnelError, .invalidProvisioning)
+        }
+
+        let stored = await credentialStore.savedData(
+            service: AuroraNativeProvisioningStore.service,
+            account: AuroraNativeProvisioningStore.account(identifier: "production-slot")
+        )
+        XCTAssertNil(stored)
+    }
+
+    func testCoreNativeProvisioningValidatorRejectsMalformedSource() async {
+        let validator = AuroraCoreNativeProvisioningValidator()
+
+        do {
+            try await validator.validate(source: Data([0x01]), now: Date())
+            XCTFail("malformed provisioning source was accepted")
+        } catch {
+            XCTAssertEqual(error as? AuroraNativeTunnelError, .invalidProvisioning)
+        }
     }
 
     func testNativePacketTunnelCoreUsesOpaqueCoreSessionAndIssuerTransport() async throws {
@@ -893,6 +933,7 @@ final class AuroraKitTests: XCTestCase {
         )
         let provisioningStore = AuroraNativeProvisioningStore(
             credentialStore: credentialStore,
+            validator: MockNativeProvisioningValidator(),
             reserver: MockNativeProvisioningReserver(reservations: [reservation])
         )
         try await provisioningStore.save(provisioning, identifier: "production-slot")
@@ -961,6 +1002,7 @@ final class AuroraKitTests: XCTestCase {
         let firstReserver = MockNativeProvisioningReserver(reservations: [first])
         let store = AuroraNativeProvisioningStore(
             credentialStore: credentials,
+            validator: MockNativeProvisioningValidator(),
             reserver: firstReserver
         )
         try await store.save(Data(repeating: 0xaa, count: 128), identifier: "recovery-slot")
@@ -970,6 +1012,7 @@ final class AuroraKitTests: XCTestCase {
         let secondReserver = MockNativeProvisioningReserver(reservations: [second])
         let restoredStore = AuroraNativeProvisioningStore(
             credentialStore: credentials,
+            validator: MockNativeProvisioningValidator(),
             reserver: secondReserver
         )
         let secondResult = try await restoredStore.reserve(identifier: "recovery-slot", now: now)
@@ -1002,7 +1045,11 @@ final class AuroraKitTests: XCTestCase {
             accessHintExpiryUnix: UInt64(Date().addingTimeInterval(3_600).timeIntervalSince1970)
         )
         let reserver = MockNativeProvisioningReserver(reservations: [first, second])
-        let store = AuroraNativeProvisioningStore(credentialStore: credentials, reserver: reserver)
+        let store = AuroraNativeProvisioningStore(
+            credentialStore: credentials,
+            validator: MockNativeProvisioningValidator(),
+            reserver: reserver
+        )
         try await store.save(Data(repeating: 0xbb, count: 128), identifier: "recovery-slot")
         let driver = MockNativeSessionDriver(
             work: AuroraNativeIssuerWork(
@@ -2467,7 +2514,10 @@ final class AuroraKitTests: XCTestCase {
 
     func testControllerConnectsNativeProvisioningWithoutLegacyServerChecks() async throws {
         let credentialStore = MockSecureCredentialStore()
-        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore)
+        let provisioningStore = AuroraNativeProvisioningStore(
+            credentialStore: credentialStore,
+            validator: MockNativeProvisioningValidator()
+        )
         try await provisioningStore.save(Data(repeating: 0xd2, count: 64))
         let tunnelManager = MockTunnelManager()
         let packetClient = MockPacketExchangeClient(error: AuroraClientError.unavailable)
@@ -3118,6 +3168,25 @@ private actor MockNativeProvisioningReserver: AuroraNativeProvisioningReserver {
         }
         reservedSpentHintKeys.append(spentHintKeys)
         return reservations.removeFirst()
+    }
+}
+
+private actor MockNativeProvisioningValidator: AuroraNativeProvisioningValidator {
+    private let error: (any Error)?
+    private(set) var validatedSources: [Data] = []
+
+    init(error: (any Error)? = nil) {
+        self.error = error
+    }
+
+    func validate(source: Data, now: Date) async throws {
+        guard !source.isEmpty, now.timeIntervalSince1970 > 0 else {
+            throw AuroraNativeTunnelError.invalidProvisioning
+        }
+        validatedSources.append(source)
+        if let error {
+            throw error
+        }
     }
 }
 
