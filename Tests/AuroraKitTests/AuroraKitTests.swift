@@ -884,8 +884,17 @@ final class AuroraKitTests: XCTestCase {
 
     func testNativePacketTunnelCoreUsesOpaqueCoreSessionAndIssuerTransport() async throws {
         let credentialStore = MockSecureCredentialStore()
-        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore)
         let provisioning = Data(repeating: 0x6b, count: 64)
+        let reservation = AuroraNativeProvisioningReservation(
+            provisioning: provisioning,
+            spentHintKey: Data(repeating: 0x51, count: 48),
+            relayBucketID: Data(repeating: 0x61, count: 16),
+            accessHintExpiryUnix: UInt64(Date().addingTimeInterval(3_600).timeIntervalSince1970)
+        )
+        let provisioningStore = AuroraNativeProvisioningStore(
+            credentialStore: credentialStore,
+            reserver: MockNativeProvisioningReserver(reservations: [reservation])
+        )
         try await provisioningStore.save(provisioning, identifier: "production-slot")
         let driver = MockNativeSessionDriver(
             work: AuroraNativeIssuerWork(
@@ -932,6 +941,98 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(requestedBody, Data([0x01, 0x02, 0x03]))
         XCTAssertEqual(immediate.protocolNumbers, [2])
         XCTAssertEqual(remote.protocolNumbers, [30])
+    }
+
+    func testNativeProvisioningStorePersistsReservationsAcrossInstances() async throws {
+        let credentials = MockSecureCredentialStore()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xa1, count: 64),
+            spentHintKey: Data(repeating: 0x11, count: 48),
+            relayBucketID: Data(repeating: 0x21, count: 16),
+            accessHintExpiryUnix: 1_800_003_600
+        )
+        let second = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xa2, count: 64),
+            spentHintKey: Data(repeating: 0x12, count: 48),
+            relayBucketID: Data(repeating: 0x21, count: 16),
+            accessHintExpiryUnix: 1_800_003_600
+        )
+        let firstReserver = MockNativeProvisioningReserver(reservations: [first])
+        let store = AuroraNativeProvisioningStore(
+            credentialStore: credentials,
+            reserver: firstReserver
+        )
+        try await store.save(Data(repeating: 0xaa, count: 128), identifier: "recovery-slot")
+        let firstResult = try await store.reserve(identifier: "recovery-slot", now: now)
+        XCTAssertEqual(firstResult, first)
+
+        let secondReserver = MockNativeProvisioningReserver(reservations: [second])
+        let restoredStore = AuroraNativeProvisioningStore(
+            credentialStore: credentials,
+            reserver: secondReserver
+        )
+        let secondResult = try await restoredStore.reserve(identifier: "recovery-slot", now: now)
+        XCTAssertEqual(secondResult, second)
+        let secondReservedSpentHintKeys = await secondReserver.reservedSpentHintKeys
+        XCTAssertEqual(secondReservedSpentHintKeys, [[first.spentHintKey]])
+
+        let storedLedgerData = await credentials.savedData(
+            service: AuroraNativeProvisioningStore.reservationService,
+            account: AuroraNativeProvisioningStore.reservationAccount(identifier: "recovery-slot")
+        )
+        let ledgerData = try XCTUnwrap(storedLedgerData)
+        let ledger = try JSONDecoder().decode(AuroraNativeProvisioningReservationLedger.self, from: ledgerData)
+        XCTAssertEqual(ledger.entries.map(\.spentHintKey), [first.spentHintKey, second.spentHintKey])
+        XCTAssertFalse(ledgerData.contains(Data(repeating: 0xaa, count: 8)))
+    }
+
+    func testNativePacketTunnelCoreUsesFreshReservationAfterReconnect() async throws {
+        let credentials = MockSecureCredentialStore()
+        let first = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xb1, count: 64),
+            spentHintKey: Data(repeating: 0x31, count: 48),
+            relayBucketID: Data(repeating: 0x41, count: 16),
+            accessHintExpiryUnix: UInt64(Date().addingTimeInterval(3_600).timeIntervalSince1970)
+        )
+        let second = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xb2, count: 64),
+            spentHintKey: Data(repeating: 0x32, count: 48),
+            relayBucketID: Data(repeating: 0x41, count: 16),
+            accessHintExpiryUnix: UInt64(Date().addingTimeInterval(3_600).timeIntervalSince1970)
+        )
+        let reserver = MockNativeProvisioningReserver(reservations: [first, second])
+        let store = AuroraNativeProvisioningStore(credentialStore: credentials, reserver: reserver)
+        try await store.save(Data(repeating: 0xbb, count: 128), identifier: "recovery-slot")
+        let driver = MockNativeSessionDriver(
+            work: AuroraNativeIssuerWork(
+                handle: 51,
+                issuerURL: URL(string: "https://issuer.example")!,
+                issuerCarrierPath: "/assets/issue/51",
+                requestBody: Data([0x01])
+            ),
+            ingressPackets: [],
+            nextPacket: Data([0x60, 0x00, 0x00, 0x00])
+        )
+        let core = AuroraNativePacketTunnelCore(
+            provisioningStore: store,
+            sessionDriver: driver,
+            issuerTransport: MockNativeIssuerTransport(response: Data([0xaa]))
+        )
+        let configuration = AuroraConfiguration(
+            endpoint: URL(string: "https://relay.example:9443")!,
+            nativeProvisioningIdentifier: "recovery-slot"
+        )
+
+        try await core.connect(configuration: configuration)
+        await core.close()
+        try await core.connect(configuration: configuration)
+        await core.close()
+
+        let begunProvisionings = await driver.begunProvisionings
+        let reservedSpentHintKeys = await reserver.reservedSpentHintKeys
+        XCTAssertEqual(begunProvisionings, [first.provisioning, second.provisioning])
+        XCTAssertEqual(reservedSpentHintKeys, [[], [first.spentHintKey]])
     }
 
     func testNativeIssuerRedirectDelegateRejectsRedirects() {
@@ -2999,6 +3100,27 @@ private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
     }
 }
 
+private actor MockNativeProvisioningReserver: AuroraNativeProvisioningReserver {
+    private var reservations: [AuroraNativeProvisioningReservation]
+    private(set) var reservedSpentHintKeys: [[Data]] = []
+
+    init(reservations: [AuroraNativeProvisioningReservation]) {
+        self.reservations = reservations
+    }
+
+    func reserve(
+        source: Data,
+        spentHintKeys: [Data],
+        now: Date
+    ) async throws -> AuroraNativeProvisioningReservation {
+        guard !source.isEmpty, now.timeIntervalSince1970 > 0, !reservations.isEmpty else {
+            throw AuroraNativeTunnelError.invalidProvisioning
+        }
+        reservedSpentHintKeys.append(spentHintKeys)
+        return reservations.removeFirst()
+    }
+}
+
 private final class IssuerURLProtocol: URLProtocol, @unchecked Sendable {
     struct Response: Sendable {
         var path: String
@@ -3124,6 +3246,7 @@ private actor MockNativeSessionDriver: AuroraNativeSessionDriver {
     private let responses: [Data]
     private let remotePacket: Data
     private(set) var beginProvisioning: Data?
+    private(set) var begunProvisionings: [Data] = []
     private(set) var completedHandle: UInt64?
     private(set) var completedResponse: Data?
     private(set) var ingressPackets: [Data] = []
@@ -3137,6 +3260,7 @@ private actor MockNativeSessionDriver: AuroraNativeSessionDriver {
 
     func begin(provisioning: Data) async throws -> AuroraNativeIssuerWork {
         beginProvisioning = provisioning
+        begunProvisionings.append(provisioning)
         return work
     }
 
