@@ -14,6 +14,7 @@
 		12A5B53F26CBFAA4C7067EEA /* AuroraStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F36CC12D00ACADF86361E1 /* AuroraStatusView.swift */; };
 		1D476DAA0BB105B69879EED1 /* AuroraRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */; };
 		22454227E5C44FC0DE29652F /* AuroraStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F36CC12D00ACADF86361E1 /* AuroraStatusView.swift */; };
+		3A71B4F2A55A8280AF2848F9 /* AuroraNativeTrustConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4465996C7AAD4E9AA6AA7B5B /* AuroraNativeTrustConfiguration.swift */; };
 		3D2732712428594EA96C1619 /* AuroraPacketTunnelRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CB3DE75AB5028FB1A64FE /* AuroraPacketTunnelRuntime.swift */; };
 		3D9752B8B99538FF78FF7C12 /* AuroraCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2FA74ED98EF116E21C6922B3 /* AuroraCore.xcframework */; };
 		3EEF3C87016C1831AE79E785 /* AuroraKit_macOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D0D733810C55062FF37301F /* AuroraKit_macOS.framework */; };
@@ -55,6 +56,7 @@
 		E73483BA783B0F0D559F90EA /* AuroraCoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7544A77C23F5FB667C3CF91B /* AuroraCoreBridge.swift */; };
 		EFFA9680BF1015E931169387 /* AuroraNativePacketTunnelCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F37EDDC12EC973CCFE74C6E /* AuroraNativePacketTunnelCore.swift */; };
 		F398C96FB2AA206560021F08 /* AuroraRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */; };
+		FC444CF65C18D45F5B148E34 /* AuroraNativeTrustConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4465996C7AAD4E9AA6AA7B5B /* AuroraNativeTrustConfiguration.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -191,6 +193,7 @@
 		2FA74ED98EF116E21C6922B3 /* AuroraCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = AuroraCore.xcframework; path = Vendor/AuroraCore.xcframework; sourceTree = "<group>"; };
 		3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraServerClient.swift; sourceTree = "<group>"; };
 		3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraRedactor.swift; sourceTree = "<group>"; };
+		4465996C7AAD4E9AA6AA7B5B /* AuroraNativeTrustConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraNativeTrustConfiguration.swift; sourceTree = "<group>"; };
 		44A3FB58DED713406FD9E577 /* AuroraPacketTunnel-iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "AuroraPacketTunnel-iOS.entitlements"; sourceTree = "<group>"; };
 		49329FE830B3AD5F8B8E880E /* AuroraIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AuroraIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4D0DD0772BAC7537925C25EB /* AuroraPacketTunnel-macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "AuroraPacketTunnel-macOS.entitlements"; sourceTree = "<group>"; };
@@ -303,6 +306,7 @@
 				7544A77C23F5FB667C3CF91B /* AuroraCoreBridge.swift */,
 				1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */,
 				2F37EDDC12EC973CCFE74C6E /* AuroraNativePacketTunnelCore.swift */,
+				4465996C7AAD4E9AA6AA7B5B /* AuroraNativeTrustConfiguration.swift */,
 				2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */,
 				0003C637BB2FA43C7014210A /* AuroraPacketTunnelLifecycle.swift */,
 				771CB3DE75AB5028FB1A64FE /* AuroraPacketTunnelRuntime.swift */,
@@ -391,6 +395,7 @@
 			buildPhases = (
 				0270979A465E9310847BDD69 /* Sources */,
 				F4D3879E12B8B09A7843381F /* Frameworks */,
+				7799136AEBEED225A026486B /* Copy sealed native trust resource */,
 			);
 			buildRules = (
 			);
@@ -493,6 +498,7 @@
 			buildPhases = (
 				2485E16964C250A0102FB450 /* Sources */,
 				E9CF3EE10AED8C0243672049 /* Frameworks */,
+				E30AE0A9DCBFB25E9E5544E9 /* Copy sealed native trust resource */,
 			);
 			buildRules = (
 			);
@@ -580,6 +586,47 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		7799136AEBEED225A026486B /* Copy sealed native trust resource */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy sealed native trust resource";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/usr/bin/env sh\nset -eu\n\nSOURCE_PATH=\"$SRCROOT/Sources/AuroraKit/Resources/AuroraSignedSeedTrust.bin\"\nRESOURCE_PATH=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AuroraSignedSeedTrust.bin\"\n\nif [ ! -f \"$SOURCE_PATH\" ]; then\n    if [ \"$CONFIGURATION\" = \"Release\" ]; then\n        printf 'missing sealed native trust resource: %s\\n' \"$SOURCE_PATH\" >&2\n        exit 1\n    fi\n    exit 0\nfi\nif [ ! -s \"$SOURCE_PATH\" ]; then\n    printf 'sealed native trust resource is empty: %s\\n' \"$SOURCE_PATH\" >&2\n    exit 1\nfi\n\nmkdir -p \"$(dirname \"$RESOURCE_PATH\")\"\ninstall -m 600 \"$SOURCE_PATH\" \"$RESOURCE_PATH\"\n";
+		};
+		E30AE0A9DCBFB25E9E5544E9 /* Copy sealed native trust resource */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy sealed native trust resource";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "#!/usr/bin/env sh\nset -eu\n\nSOURCE_PATH=\"$SRCROOT/Sources/AuroraKit/Resources/AuroraSignedSeedTrust.bin\"\nRESOURCE_PATH=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/AuroraSignedSeedTrust.bin\"\n\nif [ ! -f \"$SOURCE_PATH\" ]; then\n    if [ \"$CONFIGURATION\" = \"Release\" ]; then\n        printf 'missing sealed native trust resource: %s\\n' \"$SOURCE_PATH\" >&2\n        exit 1\n    fi\n    exit 0\nfi\nif [ ! -s \"$SOURCE_PATH\" ]; then\n    printf 'sealed native trust resource is empty: %s\\n' \"$SOURCE_PATH\" >&2\n    exit 1\nfi\n\nmkdir -p \"$(dirname \"$RESOURCE_PATH\")\"\ninstall -m 600 \"$SOURCE_PATH\" \"$RESOURCE_PATH\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		0270979A465E9310847BDD69 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -590,6 +637,7 @@
 				E73483BA783B0F0D559F90EA /* AuroraCoreBridge.swift in Sources */,
 				B6B85CDDA1291747D680D9D9 /* AuroraIssuerClient.swift in Sources */,
 				EFFA9680BF1015E931169387 /* AuroraNativePacketTunnelCore.swift in Sources */,
+				FC444CF65C18D45F5B148E34 /* AuroraNativeTrustConfiguration.swift in Sources */,
 				CA925301A17A7319F265CE12 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				945FD0D714D3EBB90B6D26BD /* AuroraPacketTunnelLifecycle.swift in Sources */,
 				3D2732712428594EA96C1619 /* AuroraPacketTunnelRuntime.swift in Sources */,
@@ -610,6 +658,7 @@
 				BDD39D98ABC94EE2CBEF7A92 /* AuroraCoreBridge.swift in Sources */,
 				BBAFD654C92B664EC66813C4 /* AuroraIssuerClient.swift in Sources */,
 				695B9C60FD953556B2F3E3B1 /* AuroraNativePacketTunnelCore.swift in Sources */,
+				3A71B4F2A55A8280AF2848F9 /* AuroraNativeTrustConfiguration.swift in Sources */,
 				6342FD7E19ADB4AB19BC0706 /* AuroraPacketTunnelConfiguration.swift in Sources */,
 				63008E8595068058F8E780A2 /* AuroraPacketTunnelLifecycle.swift in Sources */,
 				43F2245BB154769893E25598 /* AuroraPacketTunnelRuntime.swift in Sources */,

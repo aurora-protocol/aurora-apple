@@ -155,8 +155,13 @@ git commit -m "fix: require sealed trust before native sessions"
 
 **Files:**
 - Create: `scripts/prepare-native-trust-resource.sh`
+- Create: `scripts/copy-native-trust-resource.sh`
+- Create: `scripts/verify-app-bundles-test.sh`
 - Create: `Sources/AuroraKit/Resources/.gitkeep`
 - Modify: `.gitignore`
+- Modify: `Package.swift`
+- Modify: `project.yml`
+- Modify: `AuroraApple.xcodeproj/project.pbxproj`
 - Modify: `scripts/verify-app-bundles.sh`
 - Modify: `README.md`
 
@@ -165,7 +170,7 @@ git commit -m "fix: require sealed trust before native sessions"
 - Produces: ignored `Sources/AuroraKit/Resources/AuroraSignedSeedTrust.bin` after Core validation.
 - Produces: `AURORA_REQUIRE_SIGNED_SEED_TRUST=1` bundle verification mode.
 
-- [ ] **Step 1: Write the failing release-resource checks**
+- [x] **Step 1: Write the failing release-resource checks**
 
 ```sh
 AURORA_REQUIRE_SIGNED_SEED_TRUST=1 \
@@ -175,7 +180,7 @@ sh scripts/verify-app-bundles.sh
 
 Expected: FAIL with a missing sealed trust resource for each application framework bundle.
 
-- [ ] **Step 2: Add a validating preparation script and bundle checks**
+- [x] **Step 2: Add a validating preparation script and bundle checks**
 
 ```sh
 test -n "${AURORA_SIGNED_SEED_TRUST_PATH:-}"
@@ -186,7 +191,7 @@ install -m 600 "$AURORA_SIGNED_SEED_TRUST_PATH" "$RESOURCE_PATH"
 
 When `AURORA_REQUIRE_SIGNED_SEED_TRUST=1`, the bundle verifier finds `AuroraSignedSeedTrust.bin` inside both built AuroraKit framework resource locations and rejects zero-byte files.
 
-- [ ] **Step 3: Prepare a canonical non-operational test root and run release-resource checks**
+- [x] **Step 3: Prepare a canonical non-operational test root and run release-resource checks**
 
 Run: `AURORA_SIGNED_SEED_TRUST_PATH=/private/tmp/aurora-test-trust.bin scripts/prepare-native-trust-resource.sh`
 
@@ -194,14 +199,14 @@ Run: `AURORA_REQUIRE_SIGNED_SEED_TRUST=1 DERIVED_DATA_PATH="$PWD/DerivedData" sh
 
 Expected: PASS after the resource exists in both rebuilt framework bundles.
 
-- [ ] **Step 4: Document the release-only injection interface**
+- [x] **Step 4: Document the release-only injection interface**
 
 ```markdown
 The release build injects a validated trust resource before compilation.
 The resource is not a user import and is not committed to source control.
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```sh
 git add .gitignore README.md scripts/prepare-native-trust-resource.sh scripts/verify-app-bundles.sh Sources/AuroraKit/Resources/.gitkeep

@@ -31,6 +31,28 @@ AURORA_CORE_DIR=/path/to/aurora-core scripts/build-auroracore-xcframework.sh
 It produces macOS (arm64+x86_64), iOS device (arm64), and iOS simulator
 (arm64+x86_64) slices. Requires the Go toolchain and Xcode.
 
+## Release Trust Resource
+
+Native packet tunnels require an independently anchored trust resource that is
+sealed into the AuroraKit framework for release builds. It is not a user import
+and is not committed to source control. The release process validates the
+canonical resource with the sibling Core checkout before copying it into the
+ignored resource path:
+
+```sh
+AURORA_SIGNED_SEED_TRUST_PATH=/secure/path/AuroraSignedSeedTrust.bin \
+  scripts/prepare-native-trust-resource.sh
+```
+
+Release builds fail when the resource is absent or empty. Validate a built
+release bundle with:
+
+```sh
+AURORA_REQUIRE_SIGNED_SEED_TRUST=1 \
+  DERIVED_DATA_PATH=/path/to/DerivedData \
+  sh scripts/verify-app-bundles.sh
+```
+
 ## Local checks
 
 ```sh

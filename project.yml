@@ -16,6 +16,8 @@ targets:
     platform: iOS
     sources:
       - path: Sources/AuroraKit
+        excludes:
+          - Resources
     dependencies:
       - framework: Vendor/AuroraCore.xcframework
         embed: false
@@ -26,11 +28,17 @@ targets:
         PRODUCT_MODULE_NAME: AuroraKit
         GENERATE_INFOPLIST_FILE: YES
         OTHER_LDFLAGS: -lresolv -framework Security -framework CoreFoundation
+    postBuildScripts:
+      - name: Copy sealed native trust resource
+        path: scripts/copy-native-trust-resource.sh
+        basedOnDependencyAnalysis: false
   AuroraKit_macOS:
     type: framework
     platform: macOS
     sources:
       - path: Sources/AuroraKit
+        excludes:
+          - Resources
     dependencies:
       - framework: Vendor/AuroraCore.xcframework
         embed: false
@@ -41,6 +49,10 @@ targets:
         PRODUCT_MODULE_NAME: AuroraKit
         GENERATE_INFOPLIST_FILE: YES
         OTHER_LDFLAGS: -lresolv -framework Security -framework CoreFoundation
+    postBuildScripts:
+      - name: Copy sealed native trust resource
+        path: scripts/copy-native-trust-resource.sh
+        basedOnDependencyAnalysis: false
   AuroraUI_iOS:
     type: framework
     platform: iOS
