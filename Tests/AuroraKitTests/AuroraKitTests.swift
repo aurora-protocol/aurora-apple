@@ -3,6 +3,13 @@ import XCTest
 @testable import AuroraKit
 
 final class AuroraKitTests: XCTestCase {
+    func testCoreAcceptsCanonicalNativeTrustConfiguration() throws {
+        let encoded = try XCTUnwrap(Data(base64Encoded: "AQGhoaGhoaGhoaGhoaGhoaGhDmehdcbgoQvoAE1oXDEFyAFBAgEAQQRrF9Hy4SxCR/i85uVjpEDydwN9gS3rM6D0oTlF2JjClk/jQuL+Gn+bjufrSnwPnhYrzjNXazFezsu2QGg3v1H1AAAAAAAAAAEAAAAA9IZXAAAAAAAE"))
+
+        XCTAssertTrue(AuroraCore.configureNativeProvisioningTrust(encoded))
+        XCTAssertTrue(AuroraCore.configureNativeProvisioningTrust(encoded))
+    }
+
     func testServerStatusDecodesHealthResponse() throws {
         let data = #"{"ready":true,"issuer":true,"cover":true}"#.data(using: .utf8)!
         let status = try JSONDecoder().decode(AuroraServerStatus.self, from: data)

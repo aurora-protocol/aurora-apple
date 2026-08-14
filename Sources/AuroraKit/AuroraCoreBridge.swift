@@ -26,6 +26,7 @@ enum AuroraCore {
         case ingressLocalPacket = 18
         case nextLocalPacket = 15
         case reserveNativeProvisioning = 19
+        case configureNativeProvisioningTrust = 21
     }
 
     private enum Status: UInt8 {
@@ -258,6 +259,13 @@ enum AuroraCore {
         return decodeNativeProvisioningReservation(payload, nowUnix: UInt64(seconds))
     }
 
+    static func configureNativeProvisioningTrust(_ encoded: Data) -> Bool {
+        guard !encoded.isEmpty, encoded.count <= 65_536 else {
+            return false
+        }
+        return okPayload(call(.configureNativeProvisioningTrust, input: encoded)) != nil
+    }
+
     // MARK: - ABI plumbing
 
     private static func okPayload(_ result: Result?) -> Data? {
@@ -278,7 +286,7 @@ enum AuroraCore {
             }
         }
         guard let ptr = raw else { return nil }
-        defer { AuroraCoreFree(ptr) }
+        defer { AuroraCoreZeroFree(ptr, outLen) }
         guard outLen >= 1, let status = Status(rawValue: ptr[0]) else { return nil }
         let payload = outLen > 1 ? Data(bytes: ptr + 1, count: Int(outLen) - 1) : Data()
         return Result(status: status, payload: payload)
