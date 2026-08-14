@@ -241,13 +241,13 @@ Run: `AURORA_REQUIRE_SIGNED_SEED_TRUST=1 DERIVED_DATA_PATH="$PWD/DerivedData" sh
 
 Expected: PASS after the canonical non-operational test resource is prepared and builds are refreshed.
 
-- [ ] **Step 4: Review the complete diff**
+- [x] **Step 4: Review the complete diff**
 
 Run: `git diff origin/main...HEAD`
 
 Expected: only the Core configuration bridge, trust loader, driver injection, release resource scripts, tests, and documentation described above.
 
-- [ ] **Step 5: Commit any verification-only tracked adjustments and open a draft pull request**
+- [x] **Step 5: Commit any verification-only tracked adjustments and open a draft pull request**
 
 ```sh
 git status --short
@@ -326,7 +326,7 @@ Run: `AURORA_CORE_DIR=/path/to/aurora-core scripts/aurora-apple-check.sh`
 
 Expected: PASS with a current Core ABI, exact canonical resource checks, and all unsigned local targets still compiling.
 
-- [ ] **Step 6: Commit and re-review**
+- [x] **Step 6: Commit and re-review**
 
 ```sh
 git add .github project.yml AuroraApple.xcodeproj scripts README.md docs
