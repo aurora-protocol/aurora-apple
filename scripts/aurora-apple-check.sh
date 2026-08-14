@@ -20,6 +20,7 @@ scripts/verify-core-abi.sh
 scripts/build-auroracore-xcframework.sh
 
 scripts/verify-app-bundles-test.sh
+scripts/verify-signed-entitlements-test.sh
 
 swift test \
   --cache-path "$SWIFTPM_CACHE_PATH" \

@@ -8,19 +8,14 @@ permissions:
 
 jobs:
   archive:
+    if: github.ref == 'refs/heads/main'
     environment: production
     runs-on: macos-latest
-    env:
-      AURORA_APPLE_DEVELOPMENT_TEAM: ${{ secrets.AURORA_APPLE_DEVELOPMENT_TEAM }}
-      AURORA_APPLE_SIGNING_CERTIFICATE_BASE64: ${{ secrets.AURORA_APPLE_SIGNING_CERTIFICATE_BASE64 }}
-      AURORA_APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.AURORA_APPLE_SIGNING_CERTIFICATE_PASSWORD }}
-      AURORA_APPLE_PROVISIONING_PROFILES_BASE64: ${{ secrets.AURORA_APPLE_PROVISIONING_PROFILES_BASE64 }}
-      AURORA_SIGNED_SEED_TRUST_BASE64: ${{ secrets.AURORA_SIGNED_SEED_TRUST_BASE64 }}
-      AURORA_SIGNING_KEYCHAIN_PASSWORD: ${{ secrets.AURORA_SIGNING_KEYCHAIN_PASSWORD }}
     steps:
       - name: Checkout aurora-apple
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
+          ref: refs/heads/main
           path: aurora-apple
           persist-credentials: false
       - name: Checkout aurora-core
@@ -37,6 +32,13 @@ jobs:
           cache-dependency-path: aurora-core/go.sum
       - name: Import protected signing material
         shell: sh
+        env:
+          AURORA_APPLE_DEVELOPMENT_TEAM: ${{ secrets.AURORA_APPLE_DEVELOPMENT_TEAM }}
+          AURORA_APPLE_SIGNING_CERTIFICATE_BASE64: ${{ secrets.AURORA_APPLE_SIGNING_CERTIFICATE_BASE64 }}
+          AURORA_APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.AURORA_APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          AURORA_APPLE_PROVISIONING_PROFILES_BASE64: ${{ secrets.AURORA_APPLE_PROVISIONING_PROFILES_BASE64 }}
+          AURORA_SIGNED_SEED_TRUST_BASE64: ${{ secrets.AURORA_SIGNED_SEED_TRUST_BASE64 }}
+          AURORA_SIGNING_KEYCHAIN_PASSWORD: ${{ secrets.AURORA_SIGNING_KEYCHAIN_PASSWORD }}
         run: |
           set -eu
           test -n "$AURORA_APPLE_DEVELOPMENT_TEAM" || { printf 'missing protected release input: AURORA_APPLE_DEVELOPMENT_TEAM\n' >&2; exit 1; }
@@ -49,6 +51,7 @@ jobs:
           PROFILES_PATH="$RUNNER_TEMP/aurora-profiles.zip"
           TRUST_PATH="$RUNNER_TEMP/AuroraSignedSeedTrust.bin"
           KEYCHAIN_PATH="$RUNNER_TEMP/aurora-signing.keychain-db"
+          TEAM_PATH="$RUNNER_TEMP/aurora-signing-team"
           printf '%s' "$AURORA_APPLE_SIGNING_CERTIFICATE_BASE64" | base64 -D > "$CERTIFICATE_PATH"
           printf '%s' "$AURORA_APPLE_PROVISIONING_PROFILES_BASE64" | base64 -D > "$PROFILES_PATH"
           printf '%s' "$AURORA_SIGNED_SEED_TRUST_BASE64" | base64 -D > "$TRUST_PATH"
@@ -60,7 +63,10 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$AURORA_SIGNING_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           unzip -q "$PROFILES_PATH" -d "$HOME/Library/MobileDevice/Provisioning Profiles"
+          umask 077
+          printf '%s' "$AURORA_APPLE_DEVELOPMENT_TEAM" > "$TEAM_PATH"
           printf 'AURORA_SIGNED_SEED_TRUST_PATH=%s\n' "$TRUST_PATH" >> "$GITHUB_ENV"
+          printf 'AURORA_RELEASE_TEAM_PATH=%s\n' "$TEAM_PATH" >> "$GITHUB_ENV"
       - name: Build Core and prepare sealed trust resource
         working-directory: aurora-apple
         env:
@@ -75,8 +81,9 @@ jobs:
           set -eu
           IOS_ARCHIVE="$RUNNER_TEMP/AuroraIOS.xcarchive"
           MAC_ARCHIVE="$RUNNER_TEMP/AuroraMac.xcarchive"
-          xcodebuild -project AuroraApple.xcodeproj -scheme AuroraIOS -configuration Release -destination 'generic/platform=iOS' -archivePath "$IOS_ARCHIVE" archive DEVELOPMENT_TEAM="$AURORA_APPLE_DEVELOPMENT_TEAM"
-          xcodebuild -project AuroraApple.xcodeproj -scheme AuroraMac -configuration Release -destination 'platform=macOS' -archivePath "$MAC_ARCHIVE" archive DEVELOPMENT_TEAM="$AURORA_APPLE_DEVELOPMENT_TEAM"
+          DEVELOPMENT_TEAM="$(cat "$AURORA_RELEASE_TEAM_PATH")"
+          xcodebuild -project AuroraApple.xcodeproj -scheme AuroraIOS -configuration Release -destination 'generic/platform=iOS' -archivePath "$IOS_ARCHIVE" archive DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
+          xcodebuild -project AuroraApple.xcodeproj -scheme AuroraMac -configuration Release -destination 'platform=macOS' -archivePath "$MAC_ARCHIVE" archive DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
           printf 'AURORA_IOS_APP=%s\n' "$IOS_ARCHIVE/Products/Applications/AuroraIOS.app" >> "$GITHUB_ENV"
           printf 'AURORA_MAC_APP=%s\n' "$MAC_ARCHIVE/Products/Applications/AuroraMac.app" >> "$GITHUB_ENV"
       - name: Verify signed archive artifacts
@@ -85,4 +92,6 @@ jobs:
           AURORA_CORE_DIR: ${{ github.workspace }}/aurora-core
           AURORA_REQUIRE_SIGNED_SEED_TRUST: "1"
           AURORA_REQUIRE_SIGNED_ARTIFACTS: "1"
-        run: sh scripts/verify-app-bundles.sh
+        run: |
+          set -eu
+          AURORA_EXPECTED_SIGNING_TEAM="$(cat "$AURORA_RELEASE_TEAM_PATH")" sh scripts/verify-app-bundles.sh
