@@ -1,8 +1,74 @@
 import Foundation
+import AuroraCoreFFI
 import XCTest
 @testable import AuroraKit
 
 final class AuroraKitTests: XCTestCase {
+    func testCoreFFIZeroFreeHandlesSuccessfulMalformedAndInvalidLengthResults() throws {
+        var successfulLength: Int32 = 0
+        let successful = try XCTUnwrap(AuroraCoreCall(1, nil, 0, 0, &successfulLength))
+        defer { AuroraCoreZeroFree(successful, successfulLength) }
+        XCTAssertGreaterThan(successfulLength, 1)
+        XCTAssertEqual(successful[0], 0)
+
+        var malformedInput = Data([0xFF])
+        var malformedLength: Int32 = 0
+        let malformed = try XCTUnwrap(malformedInput.withUnsafeMutableBytes { buffer in
+            AuroraCoreCall(
+                4,
+                buffer.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                Int32(buffer.count),
+                0,
+                &malformedLength
+            )
+        })
+        defer { AuroraCoreZeroFree(malformed, malformedLength) }
+        XCTAssertEqual(malformedLength, 1)
+        XCTAssertEqual(malformed[0], 2)
+
+        var invalidLength: Int32 = 0
+        let invalid = try XCTUnwrap(AuroraCoreCall(1, nil, -1, 0, &invalidLength))
+        defer { AuroraCoreZeroFree(invalid, invalidLength) }
+        XCTAssertEqual(invalidLength, 1)
+        XCTAssertEqual(invalid[0], 2)
+    }
+
+    func testCoreDriverSupportsConcurrentRepeatedTrustConfiguration() async throws {
+        let events = NativeTrustDriverEvents()
+        let binding = RecordingNativeCoreBinding(events: events)
+        let encoded = try XCTUnwrap(Data(base64Encoded: "AQGhoaGhoaGhoaGhoaGhoaGhDmehdcbgoQvoAE1oXDEFyAFBAgEAQQRrF9Hy4SxCR/i85uVjpEDydwN9gS3rM6D0oTlF2JjClk/jQuL+Gn+bjufrSnwPnhYrzjNXazFezsu2QGg3v1H1AAAAAAAAAAEAAAAA9IZXAAAAAAAE"))
+        let driver = AuroraCoreNativeSessionDriver(
+            trustConfigurator: AuroraBundleNativeTrustConfigurator(
+                resourceLoader: { encoded },
+                configureCore: { trust in
+                    events.record("configure")
+                    return AuroraCore.configureNativeProvisioningTrust(trust)
+                }
+            ),
+            binding: binding
+        )
+        let operationCount = 32
+
+        let works = try await withThrowingTaskGroup(of: AuroraNativeIssuerWork.self) { group in
+            for value in 0 ..< operationCount {
+                group.addTask {
+                    try await driver.begin(provisioning: Data([UInt8(value)]))
+                }
+            }
+            var works: [AuroraNativeIssuerWork] = []
+            for try await work in group {
+                works.append(work)
+            }
+            return works
+        }
+
+        XCTAssertEqual(works.count, operationCount)
+        XCTAssertTrue(works.allSatisfy { $0.handle == 41 })
+        XCTAssertEqual(binding.beginCount, operationCount)
+        XCTAssertEqual(events.values.filter { $0 == "configure" }.count, operationCount)
+        XCTAssertEqual(events.values.filter { $0 == "begin" }.count, operationCount)
+    }
+
     func testCoreAcceptsCanonicalNativeTrustConfiguration() throws {
         let encoded = try XCTUnwrap(Data(base64Encoded: "AQGhoaGhoaGhoaGhoaGhoaGhDmehdcbgoQvoAE1oXDEFyAFBAgEAQQRrF9Hy4SxCR/i85uVjpEDydwN9gS3rM6D0oTlF2JjClk/jQuL+Gn+bjufrSnwPnhYrzjNXazFezsu2QGg3v1H1AAAAAAAAAAEAAAAA9IZXAAAAAAAE"))
 
