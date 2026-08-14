@@ -10,6 +10,70 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(AuroraCore.configureNativeProvisioningTrust(encoded))
     }
 
+    func testCoreDriverConfiguresTrustBeforeBeginningSession() async throws {
+        let events = NativeTrustDriverEvents()
+        let binding = RecordingNativeCoreBinding(events: events)
+        let driver = AuroraCoreNativeSessionDriver(
+            trustConfigurator: RecordingTrustConfigurator(events: events),
+            binding: binding
+        )
+
+        let work = try await driver.begin(provisioning: Data([0x01]))
+
+        XCTAssertEqual(work.handle, 41)
+        XCTAssertEqual(events.values, ["configure", "begin"])
+    }
+
+    func testCoreDriverDoesNotBeginWhenTrustConfigurationFails() async {
+        let binding = RecordingNativeCoreBinding(events: NativeTrustDriverEvents())
+        let driver = AuroraCoreNativeSessionDriver(
+            trustConfigurator: RejectingTrustConfigurator(),
+            binding: binding
+        )
+
+        do {
+            _ = try await driver.begin(provisioning: Data([0x01]))
+            XCTFail("native session began after trust configuration failed")
+        } catch {
+            XCTAssertEqual(error as? AuroraNativeTunnelError, .invalidProvisioning)
+        }
+        XCTAssertEqual(binding.beginCount, 0)
+    }
+
+    func testBundleTrustConfiguratorRejectsMissingResource() {
+        let configurator = AuroraBundleNativeTrustConfigurator(resourceURL: nil)
+
+        XCTAssertThrowsError(try configurator.configure()) { error in
+            XCTAssertEqual(error as? AuroraNativeTrustConfigurationError, .resourceUnavailable)
+        }
+    }
+
+    func testBundleTrustConfiguratorRejectsOversizedResourceBeforeCoreCall() {
+        let configurator = AuroraBundleNativeTrustConfigurator(
+            resourceLoader: { Data(repeating: 0x01, count: 65_537) },
+            configureCore: { _ in
+                XCTFail("Core received an oversized trust resource")
+                return true
+            }
+        )
+
+        XCTAssertThrowsError(try configurator.configure()) { error in
+            XCTAssertEqual(error as? AuroraNativeTrustConfigurationError, .invalidResource)
+        }
+    }
+
+    func testBundleTrustConfiguratorRejectsCoreRejection() throws {
+        let encoded = try XCTUnwrap(Data(base64Encoded: "AQGhoaGhoaGhoaGhoaGhoaGhDmehdcbgoQvoAE1oXDEFyAFBAgEAQQRrF9Hy4SxCR/i85uVjpEDydwN9gS3rM6D0oTlF2JjClk/jQuL+Gn+bjufrSnwPnhYrzjNXazFezsu2QGg3v1H1AAAAAAAAAAEAAAAA9IZXAAAAAAAE"))
+        let configurator = AuroraBundleNativeTrustConfigurator(
+            resourceLoader: { encoded },
+            configureCore: { _ in false }
+        )
+
+        XCTAssertThrowsError(try configurator.configure()) { error in
+            XCTAssertEqual(error as? AuroraNativeTrustConfigurationError, .coreRejected)
+        }
+    }
+
     func testServerStatusDecodesHealthResponse() throws {
         let data = #"{"ready":true,"issuer":true,"cover":true}"#.data(using: .utf8)!
         let status = try JSONDecoder().decode(AuroraServerStatus.self, from: data)
@@ -3104,6 +3168,82 @@ private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
 
     func savedData(service: String, account: String) -> Data? {
         entries[Key(service: service, account: account)]
+    }
+}
+
+private final class NativeTrustDriverEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedValues: [String] = []
+
+    func record(_ value: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        recordedValues.append(value)
+    }
+
+    var values: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedValues
+    }
+}
+
+private struct RecordingTrustConfigurator: AuroraNativeTrustConfiguring {
+    let events: NativeTrustDriverEvents
+
+    func configure() throws {
+        events.record("configure")
+    }
+}
+
+private struct RejectingTrustConfigurator: AuroraNativeTrustConfiguring {
+    func configure() throws {
+        throw AuroraNativeTunnelError.invalidProvisioning
+    }
+}
+
+private final class RecordingNativeCoreBinding: AuroraNativeCoreBinding, @unchecked Sendable {
+    private let lock = NSLock()
+    private let events: NativeTrustDriverEvents
+    private var recordedBeginCount = 0
+
+    init(events: NativeTrustDriverEvents) {
+        self.events = events
+    }
+
+    func begin(provisioning: Data) -> AuroraNativeIssuerWork? {
+        lock.lock()
+        recordedBeginCount += 1
+        lock.unlock()
+        events.record("begin")
+        return AuroraNativeIssuerWork(
+            handle: 41,
+            issuerURL: URL(string: "https://issuer.example")!,
+            issuerCarrierPath: "/assets/issue/41",
+            requestBody: Data([0x01])
+        )
+    }
+
+    func complete(handle: UInt64, issuerResponse: Data) -> Bool {
+        handle == 41 && !issuerResponse.isEmpty
+    }
+
+    func ingress(handle: UInt64, packet: Data) -> [Data]? {
+        handle == 41 && !packet.isEmpty ? [] : nil
+    }
+
+    func nextLocalPacket(handle: UInt64) -> Data? {
+        handle == 41 ? Data([0x45, 0x00, 0x00, 0x14]) : nil
+    }
+
+    func close(handle: UInt64) -> Bool {
+        handle == 41
+    }
+
+    var beginCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedBeginCount
     }
 }
 

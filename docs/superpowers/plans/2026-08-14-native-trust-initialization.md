@@ -88,7 +88,7 @@ git commit -m "fix: configure native trust through Core ABI"
 - Produces: `AuroraNativeTrustConfiguring.configure() throws`.
 - Produces: `AuroraCoreNativeSessionDriver.init(trustConfigurator:binding:)` for internal tests.
 
-- [ ] **Step 1: Write the failing ordering and rejection tests**
+- [x] **Step 1: Write the failing ordering and rejection tests**
 
 ```swift
 func testCoreDriverConfiguresTrustBeforeBeginningSession() async throws {
@@ -112,13 +112,13 @@ func testCoreDriverDoesNotBeginWhenTrustConfigurationFails() async {
 }
 ```
 
-- [ ] **Step 2: Run the ordering test to verify it fails**
+- [x] **Step 2: Run the ordering test to verify it fails**
 
 Run: `swift test --filter AuroraKitTests/testCoreDriverConfiguresTrustBeforeBeginningSession`
 
 Expected: FAIL because the initializer and trust configurator do not exist.
 
-- [ ] **Step 3: Add bounded resource loading and injected Core binding**
+- [x] **Step 3: Add bounded resource loading and injected Core binding**
 
 ```swift
 protocol AuroraNativeTrustConfiguring: Sendable {
@@ -138,13 +138,13 @@ struct AuroraBundleNativeTrustConfigurator: AuroraNativeTrustConfiguring {
 
 `AuroraCoreNativeSessionDriver.begin` calls `trustConfigurator.configure()` before `binding.begin(provisioning:)`. The default resource URL comes from the AuroraKit framework bundle. The binding delegates the existing static Core methods and performs no protocol work.
 
-- [ ] **Step 4: Run the focused trust and driver tests to verify they pass**
+- [x] **Step 4: Run the focused trust and driver tests to verify they pass**
 
 Run: `swift test --filter AuroraKitTests/testCoreDriver`
 
 Expected: PASS; configuration failure records no begin operation.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```sh
 git add Sources/AuroraKit/AuroraNativeTrustConfiguration.swift Sources/AuroraKit/AuroraNativePacketTunnelCore.swift Tests/AuroraKitTests/AuroraKitTests.swift

@@ -272,11 +272,30 @@ public actor AuroraNativeProvisioningStore {
 }
 
 public struct AuroraCoreNativeSessionDriver: AuroraNativeSessionDriver {
-    public init() {}
+    private let trustConfigurator: any AuroraNativeTrustConfiguring
+    private let binding: any AuroraNativeCoreBinding
+
+    public init() {
+        self.init(
+            trustConfigurator: AuroraBundleNativeTrustConfigurator(),
+            binding: AuroraCoreNativeBinding()
+        )
+    }
+
+    init(
+        trustConfigurator: any AuroraNativeTrustConfiguring,
+        binding: any AuroraNativeCoreBinding
+    ) {
+        self.trustConfigurator = trustConfigurator
+        self.binding = binding
+    }
 
     public func begin(provisioning: Data) async throws -> AuroraNativeIssuerWork {
-        try await Task.detached {
-            guard let work = AuroraCore.beginNativeSession(provisioning: provisioning) else {
+        let trustConfigurator = self.trustConfigurator
+        let binding = self.binding
+        return try await Task.detached {
+            try trustConfigurator.configure()
+            guard let work = binding.begin(provisioning: provisioning) else {
                 throw AuroraNativeTunnelError.coreOperationFailed
             }
             return work
@@ -284,16 +303,18 @@ public struct AuroraCoreNativeSessionDriver: AuroraNativeSessionDriver {
     }
 
     public func complete(handle: UInt64, issuerResponse: Data) async throws {
+        let binding = self.binding
         try await Task.detached {
-            guard AuroraCore.completeNativeSession(handle: handle, issuerResponse: issuerResponse) else {
+            guard binding.complete(handle: handle, issuerResponse: issuerResponse) else {
                 throw AuroraNativeTunnelError.coreOperationFailed
             }
         }.value
     }
 
     public func ingress(handle: UInt64, packet: Data) async throws -> [Data] {
-        try await Task.detached {
-            guard let packets = AuroraCore.ingressLocalPacket(handle: handle, packet: packet) else {
+        let binding = self.binding
+        return try await Task.detached {
+            guard let packets = binding.ingress(handle: handle, packet: packet) else {
                 throw AuroraNativeTunnelError.coreOperationFailed
             }
             return packets
@@ -301,8 +322,9 @@ public struct AuroraCoreNativeSessionDriver: AuroraNativeSessionDriver {
     }
 
     public func nextLocalPacket(handle: UInt64) async throws -> Data {
-        try await Task.detached {
-            guard let packet = AuroraCore.nextLocalPacket(handle: handle) else {
+        let binding = self.binding
+        return try await Task.detached {
+            guard let packet = binding.nextLocalPacket(handle: handle) else {
                 throw AuroraNativeTunnelError.coreOperationFailed
             }
             return packet
@@ -310,8 +332,9 @@ public struct AuroraCoreNativeSessionDriver: AuroraNativeSessionDriver {
     }
 
     public func close(handle: UInt64) async {
+        let binding = self.binding
         _ = await Task.detached {
-            AuroraCore.closeNativeSession(handle: handle)
+            binding.close(handle: handle)
         }.value
     }
 }
