@@ -1513,6 +1513,32 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(values, ["first", "second"])
     }
 
+    func testAsyncSerialQueueDrainsLargeBacklogWithinBoundedTime() async {
+        let queue = AuroraAsyncSerialQueue()
+        let gate = AsyncOperationGate()
+        let counter = AsyncOperationCounter()
+        let operationCount = 100_000
+
+        await queue.enqueue {
+            await gate.wait()
+        }
+        await gate.waitUntilBlocked()
+        for _ in 0..<operationCount {
+            await queue.enqueue {
+                counter.increment()
+            }
+        }
+
+        let clock = ContinuousClock()
+        let started = clock.now
+        await gate.release()
+        await queue.waitForQuiescence()
+        let elapsed = started.duration(to: clock.now)
+
+        XCTAssertEqual(counter.value, operationCount)
+        XCTAssertLessThan(elapsed, .seconds(1))
+    }
+
     func testPacketTunnelRuntimeSuspendsAndRecoversRecoverableCore() async throws {
         let packetFlow = MockPacketFlow(batches: [])
         let core = MockRecoverablePacketTunnelCore()
@@ -3681,6 +3707,59 @@ private actor MockAsyncOperationRecorder {
 
     func append(_ value: String) {
         values.append(value)
+    }
+}
+
+private actor AsyncOperationGate {
+    private var blockedContinuation: CheckedContinuation<Void, Never>?
+    private var startedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+
+    func wait() async {
+        guard !released else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            blockedContinuation = continuation
+            let waiters = startedWaiters
+            startedWaiters.removeAll()
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+
+    func waitUntilBlocked() async {
+        guard blockedContinuation == nil else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            startedWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        released = true
+        let continuation = blockedContinuation
+        blockedContinuation = nil
+        continuation?.resume()
+    }
+}
+
+private final class AsyncOperationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
     }
 }
 
