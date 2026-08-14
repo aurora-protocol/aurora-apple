@@ -132,22 +132,70 @@ public actor AuroraTokenWallet {
 }
 
 #if canImport(Security)
+protocol AuroraKeychainItemStore: AnyObject {
+    func add(_ query: CFDictionary) -> OSStatus
+    func copyMatching(_ query: CFDictionary, result: UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus
+    func update(_ query: CFDictionary, attributes: CFDictionary) -> OSStatus
+    func delete(_ query: CFDictionary) -> OSStatus
+}
+
+private final class AuroraSystemKeychainItemStore: AuroraKeychainItemStore, @unchecked Sendable {
+    static let shared = AuroraSystemKeychainItemStore()
+
+    func add(_ query: CFDictionary) -> OSStatus {
+        SecItemAdd(query, nil)
+    }
+
+    func copyMatching(_ query: CFDictionary, result: UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus {
+        SecItemCopyMatching(query, result)
+    }
+
+    func update(_ query: CFDictionary, attributes: CFDictionary) -> OSStatus {
+        SecItemUpdate(query, attributes)
+    }
+
+    func delete(_ query: CFDictionary) -> OSStatus {
+        SecItemDelete(query)
+    }
+}
+
 public struct AuroraKeychainCredentialStore: AuroraSecureCredentialStore, @unchecked Sendable {
     public let accessGroup: String?
+    private let itemStore: any AuroraKeychainItemStore
 
     public init(accessGroup: String? = AuroraAppleSharedContainer.keychainAccessGroup()) {
+        self.init(accessGroup: accessGroup, itemStore: AuroraSystemKeychainItemStore.shared)
+    }
+
+    init(accessGroup: String?, itemStore: any AuroraKeychainItemStore) {
         self.accessGroup = accessGroup
+        self.itemStore = itemStore
     }
 
     public func save(_ data: Data, service: String, account: String) async throws {
-        try await delete(service: service, account: account)
-        var query = baseQuery(service: service, account: account)
-        query[kSecValueData as String] = data
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let query = baseQuery(service: service, account: account)
+        let attributes = [kSecValueData as String: data] as CFDictionary
+        let updateStatus = itemStore.update(query as CFDictionary, attributes: attributes)
+        if updateStatus == errSecSuccess {
+            return
+        }
+        guard updateStatus == errSecItemNotFound else {
+            throw AuroraSecureCredentialStoreError.keychainStatus(updateStatus)
+        }
 
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw AuroraSecureCredentialStoreError.keychainStatus(status)
+        var createQuery = query
+        createQuery[kSecValueData as String] = data
+        createQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let createStatus = itemStore.add(createQuery as CFDictionary)
+        if createStatus == errSecSuccess {
+            return
+        }
+        guard createStatus == errSecDuplicateItem else {
+            throw AuroraSecureCredentialStoreError.keychainStatus(createStatus)
+        }
+        let retryStatus = itemStore.update(query as CFDictionary, attributes: attributes)
+        guard retryStatus == errSecSuccess else {
+            throw AuroraSecureCredentialStoreError.keychainStatus(retryStatus)
         }
     }
 
@@ -157,7 +205,7 @@ public struct AuroraKeychainCredentialStore: AuroraSecureCredentialStore, @unche
         query[kSecMatchLimit as String] = kSecMatchLimitOne
 
         var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        let status = itemStore.copyMatching(query as CFDictionary, result: &result)
         if status == errSecItemNotFound {
             return nil
         }
@@ -171,7 +219,7 @@ public struct AuroraKeychainCredentialStore: AuroraSecureCredentialStore, @unche
     }
 
     public func delete(service: String, account: String) async throws {
-        let status = SecItemDelete(baseQuery(service: service, account: account) as CFDictionary)
+        let status = itemStore.delete(baseQuery(service: service, account: account) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw AuroraSecureCredentialStoreError.keychainStatus(status)
         }

@@ -3,7 +3,44 @@ import AuroraCoreFFI
 import XCTest
 @testable import AuroraKit
 
+#if canImport(Security)
+import Security
+#endif
+
 final class AuroraKitTests: XCTestCase {
+    #if canImport(Security)
+    func testKeychainCredentialStorePreservesExistingCredentialWhenReplacementFails() async throws {
+        let oldValue = Data("old-provisioning".utf8)
+        let store = AuroraKeychainCredentialStore(
+            accessGroup: nil,
+            itemStore: FailingKeychainItemStore(storedData: oldValue)
+        )
+
+        do {
+            try await store.save(Data("new-provisioning".utf8), service: "test-service", account: "test-account")
+            XCTFail("credential replacement unexpectedly succeeded")
+        } catch let error as AuroraSecureCredentialStoreError {
+            XCTAssertEqual(error, .keychainStatus(errSecAuthFailed))
+        }
+
+        let retainedValue = try await store.load(service: "test-service", account: "test-account")
+        XCTAssertEqual(retainedValue, oldValue)
+    }
+
+    func testKeychainCredentialStoreRetriesUpdateWhenConcurrentCreationWins() async throws {
+        let store = AuroraKeychainCredentialStore(
+            accessGroup: nil,
+            itemStore: ConcurrentKeychainItemStore()
+        )
+        let replacement = Data("replacement-provisioning".utf8)
+
+        try await store.save(replacement, service: "test-service", account: "test-account")
+
+        let storedValue = try await store.load(service: "test-service", account: "test-account")
+        XCTAssertEqual(storedValue, replacement)
+    }
+    #endif
+
     func testCoreFFIZeroFreeHandlesSuccessfulMalformedAndInvalidLengthResults() throws {
         var successfulLength: Int32 = 0
         let successful = try XCTUnwrap(AuroraCoreCall(1, nil, 0, 0, &successfulLength))
@@ -3236,6 +3273,80 @@ private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
         entries[Key(service: service, account: account)]
     }
 }
+
+#if canImport(Security)
+private final class FailingKeychainItemStore: AuroraKeychainItemStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedData: Data?
+
+    init(storedData: Data) {
+        self.storedData = storedData
+    }
+
+    func add(_ query: CFDictionary) -> OSStatus {
+        errSecAuthFailed
+    }
+
+    func copyMatching(_ query: CFDictionary, result: UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let storedData else {
+            return errSecItemNotFound
+        }
+        result?.pointee = storedData as CFData
+        return errSecSuccess
+    }
+
+    func update(_ query: CFDictionary, attributes: CFDictionary) -> OSStatus {
+        errSecAuthFailed
+    }
+
+    func delete(_ query: CFDictionary) -> OSStatus {
+        lock.lock()
+        storedData = nil
+        lock.unlock()
+        return errSecSuccess
+    }
+}
+
+private final class ConcurrentKeychainItemStore: AuroraKeychainItemStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedData: Data?
+    private var updateAttempts = 0
+
+    func add(_ query: CFDictionary) -> OSStatus {
+        errSecDuplicateItem
+    }
+
+    func copyMatching(_ query: CFDictionary, result: UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let storedData else {
+            return errSecItemNotFound
+        }
+        result?.pointee = storedData as CFData
+        return errSecSuccess
+    }
+
+    func update(_ query: CFDictionary, attributes: CFDictionary) -> OSStatus {
+        lock.lock()
+        defer { lock.unlock() }
+        updateAttempts += 1
+        guard updateAttempts > 1 else {
+            return errSecItemNotFound
+        }
+        storedData = (attributes as NSDictionary)[kSecValueData as String] as? Data
+        return storedData == nil ? errSecParam : errSecSuccess
+    }
+
+    func delete(_ query: CFDictionary) -> OSStatus {
+        lock.lock()
+        storedData = nil
+        lock.unlock()
+        return errSecSuccess
+    }
+}
+#endif
 
 private final class NativeTrustDriverEvents: @unchecked Sendable {
     private let lock = NSLock()
