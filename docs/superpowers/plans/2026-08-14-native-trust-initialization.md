@@ -253,3 +253,82 @@ Expected: only the Core configuration bridge, trust loader, driver injection, re
 git status --short
 gh pr create --draft --base main --head fix/apple-native-trust-init --title "Require sealed trust before native sessions"
 ```
+
+### Task 5: Enforce ABI-Compatible CI and Signed Release Validation
+
+**Files:**
+- Modify: `.github/workflows/ci.yml`
+- Create: `.github/workflows/release-validation.yml`
+- Modify: `project.yml`
+- Modify: `AuroraApple.xcodeproj/project.pbxproj`
+- Modify: `scripts/aurora-apple-check.sh`
+- Modify: `scripts/verify-app-bundles.sh`
+- Modify: `scripts/verify-app-bundles-test.sh`
+- Create: `scripts/verify-core-abi.sh`
+- Create: `scripts/write-test-native-trust-resource.sh`
+- Modify: `README.md`
+
+**Interfaces:**
+- Consumes: `AURORA_CORE_DIR`, explicit `AURORA_IOS_APP` and `AURORA_MAC_APP` application paths, and `AURORA_REQUIRE_SIGNED_SEED_TRUST=1`.
+- Produces: CI that builds against the Core ABI used by AuroraKit.
+- Produces: a release verifier that checks exact framework resource paths, canonical root encodings, and code signatures.
+
+- [x] **Step 1: Extend the shell regression with decoy and canonical-resource cases**
+
+```sh
+mkdir -p "$IOS_FRAMEWORK/decoy" "$MAC_FRAMEWORK/decoy"
+cp "$CANONICAL_TRUST" "$IOS_FRAMEWORK/decoy/AuroraSignedSeedTrust.bin"
+cp "$CANONICAL_TRUST" "$MAC_FRAMEWORK/decoy/AuroraSignedSeedTrust.bin"
+if AURORA_REQUIRE_SIGNED_SEED_TRUST=1 AURORA_CORE_DIR="$AURORA_CORE_DIR" sh "$ROOT/scripts/verify-app-bundles.sh"; then
+    printf 'decoy trust resources unexpectedly passed\n' >&2
+    exit 1
+fi
+```
+
+- [x] **Step 2: Run the shell regression to verify it fails**
+
+Run: `AURORA_CORE_DIR=/path/to/aurora-core sh scripts/verify-app-bundles-test.sh`
+
+Expected: FAIL because recursive resource discovery accepts the decoy files.
+
+- [x] **Step 3: Implement explicit artifact and Core validation**
+
+```sh
+IOS_APP="${AURORA_IOS_APP:-$DERIVED_DATA_PATH/Build/Products/Debug-iphonesimulator/AuroraIOS.app}"
+MAC_APP="${AURORA_MAC_APP:-$DERIVED_DATA_PATH/Build/Products/Debug/AuroraMac.app}"
+require_file "$IOS_APP/Frameworks/AuroraKit.framework/AuroraSignedSeedTrust.bin"
+require_file "$MAC_APP/Contents/Frameworks/AuroraKit.framework/Resources/AuroraSignedSeedTrust.bin"
+( cd "$AURORA_CORE_DIR" && go run ./cmd/auroractl check-native-provisioning-trust "$trust_resource" )
+```
+
+Remove global `CODE_SIGNING_ALLOWED`. Keep `CODE_SIGNING_ALLOWED=NO` only in local and pull-request commands. Pin CI to the Core commit that exports the current ABI and make the readiness script execute the shell regression.
+
+- [x] **Step 4: Add signed archive validation workflow**
+
+```sh
+xcodebuild -project AuroraApple.xcodeproj -scheme AuroraIOS -configuration Release archive -archivePath "$IOS_ARCHIVE"
+xcodebuild -project AuroraApple.xcodeproj -scheme AuroraMac -configuration Release archive -archivePath "$MAC_ARCHIVE"
+AURORA_REQUIRE_SIGNED_SEED_TRUST=1 AURORA_CORE_DIR="$AURORA_CORE_DIR" \
+  AURORA_IOS_APP="$IOS_ARCHIVE/Products/Applications/AuroraIOS.app" \
+  AURORA_MAC_APP="$MAC_ARCHIVE/Products/Applications/AuroraMac.app" \
+  sh scripts/verify-app-bundles.sh
+codesign --verify --deep --strict "$MAC_APP"
+codesign --verify --deep --strict "$IOS_APP"
+```
+
+The workflow obtains signing material only from protected release environment secrets and refuses to run without all required signing inputs.
+
+- [x] **Step 5: Run the focused regressions and local readiness gate**
+
+Run: `AURORA_CORE_DIR=/path/to/aurora-core sh scripts/verify-app-bundles-test.sh`
+
+Run: `AURORA_CORE_DIR=/path/to/aurora-core scripts/aurora-apple-check.sh`
+
+Expected: PASS with a current Core ABI, exact canonical resource checks, and all unsigned local targets still compiling.
+
+- [ ] **Step 6: Commit and re-review**
+
+```sh
+git add .github project.yml AuroraApple.xcodeproj scripts README.md docs
+git commit -m "build: validate signed native trust artifacts"
+```

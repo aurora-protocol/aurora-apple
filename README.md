@@ -45,13 +45,23 @@ AURORA_SIGNED_SEED_TRUST_PATH=/secure/path/AuroraSignedSeedTrust.bin \
 ```
 
 Release builds fail when the resource is absent or empty. Validate a built
-release bundle with:
+release bundle with explicit application paths:
 
 ```sh
 AURORA_REQUIRE_SIGNED_SEED_TRUST=1 \
+  AURORA_REQUIRE_SIGNED_ARTIFACTS=1 \
+  AURORA_CORE_DIR=/path/to/aurora-core \
+  AURORA_IOS_APP=/path/to/AuroraIOS.app \
+  AURORA_MAC_APP=/path/to/AuroraMac.app \
   DERIVED_DATA_PATH=/path/to/DerivedData \
   sh scripts/verify-app-bundles.sh
 ```
+
+Unsigned local and pull-request builds pass `CODE_SIGNING_ALLOWED=NO` only on
+their `xcodebuild` commands. The generated project leaves signing enabled for
+release archives. The protected release workflow imports configured signing
+assets, archives both applications, and runs the same sealed-resource and
+signature checks before a distribution artifact is accepted.
 
 ## Local checks
 

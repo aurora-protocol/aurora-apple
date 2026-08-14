@@ -27,6 +27,11 @@ native session cannot begin without trust initialization.
   including configuration results.
 - Release bundle verification fails when the sealed resource is absent from
   either Apple application framework bundle.
+- CI pins a Core revision that exports the trust configuration operation and
+  zero-and-free function used by AuroraKit.
+- Distribution verification consumes explicit iOS and macOS application paths,
+  checks the exact framework resource location, validates both files through
+  Core, and verifies signed release artifacts.
 
 ## Design
 
@@ -45,6 +50,12 @@ framework bundle, which is present in both the app and packet-tunnel processes.
 `scripts/prepare-native-trust-resource.sh` validates a supplied release file
 with the sibling Core checkout before copying it to the ignored resource path.
 
+Unsigned local and pull-request builds remain explicit command-line choices;
+the project does not disable signing globally. Signed distribution archives use
+the normal Xcode signing configuration. Release verification receives explicit
+application paths from those archives so it cannot accidentally inspect a
+stale Debug product.
+
 ## Verification
 
 - Unit tests exercise missing, oversized, rejected, and accepted resource
@@ -55,5 +66,9 @@ with the sibling Core checkout before copying it to the ignored resource path.
 - The full local readiness script builds the portable Core, runs Swift tests,
   compiles all app and extension targets, and checks application bundles.
 - Release bundle checks run with `AURORA_REQUIRE_SIGNED_SEED_TRUST=1` after a
-  trusted resource is injected and require the resource in iOS and macOS
-  AuroraKit framework bundles.
+  trusted resource is injected, require the exact resource in iOS and macOS
+  AuroraKit framework bundles, and validate it through Core.
+- The pull-request workflow pins the ABI-compatible Core revision and runs the
+  bundle verifier regression. A separately configured release workflow archives
+  with signing enabled and verifies archive application paths and signatures
+  before distribution.

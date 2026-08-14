@@ -21,7 +21,7 @@ jobs:
         with:
           # Public sibling repo; the default token clones it without a secret.
           repository: aurora-protocol/aurora-core
-          ref: 1159f2adfe89ff5e8494db97197f39766f32777f
+          ref: ee0d6fb2eab580cfd5d650946acfa5b4e14a6d36
           path: aurora-core
           persist-credentials: false
       - name: Set up Go
@@ -33,4 +33,7 @@ jobs:
         working-directory: aurora-apple
         env:
           AURORA_CORE_DIR: ${{ github.workspace }}/aurora-core
-        run: scripts/aurora-apple-check.sh
+          AURORA_REQUIRE_SIGNED_SEED_TRUST: "1"
+        run: |
+          scripts/write-test-native-trust-resource.sh
+          scripts/aurora-apple-check.sh
