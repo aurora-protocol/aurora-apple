@@ -223,19 +223,19 @@ git commit -m "build: verify sealed native trust resources"
 - Consumes: Tasks 1 through 3.
 - Produces: a reviewed branch ready for a draft pull request.
 
-- [ ] **Step 1: Run formatting and diff checks**
+- [x] **Step 1: Run formatting and diff checks**
 
 Run: `git diff --check`
 
 Expected: PASS with no whitespace errors.
 
-- [ ] **Step 2: Run all local readiness checks**
+- [x] **Step 2: Run all local readiness checks**
 
 Run: `DERIVED_DATA_PATH="$PWD/DerivedData" scripts/aurora-apple-check.sh`
 
 Expected: PASS for the portable Core build, all Swift tests, iOS/macOS apps, and packet-tunnel targets.
 
-- [ ] **Step 3: Run sealed-resource bundle verification**
+- [x] **Step 3: Run sealed-resource bundle verification**
 
 Run: `AURORA_REQUIRE_SIGNED_SEED_TRUST=1 DERIVED_DATA_PATH="$PWD/DerivedData" sh scripts/verify-app-bundles.sh`
 
