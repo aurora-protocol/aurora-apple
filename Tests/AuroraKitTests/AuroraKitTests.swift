@@ -3,6 +3,10 @@ import XCTest
 @testable import AuroraKit
 
 final class AuroraKitTests: XCTestCase {
+    func testNativeProvisioningTrustRejectsEmptyConfiguration() {
+        XCTAssertFalse(AuroraNativeProvisioningTrust.configure(Data()))
+    }
+
     func testServerStatusDecodesHealthResponse() throws {
         let data = #"{"ready":true,"issuer":true,"cover":true}"#.data(using: .utf8)!
         let status = try JSONDecoder().decode(AuroraServerStatus.self, from: data)

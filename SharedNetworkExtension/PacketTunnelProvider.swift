@@ -33,6 +33,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         let pathObserver = pathObserver
         let pathTransitionTracker = AuroraNetworkPathTransitionTracker()
         let pathOperationQueue = AuroraAsyncSerialQueue()
+        if configuration.nativeProvisioningIdentifier != nil,
+           !AuroraNativeProvisioningTrust.configureBundled() {
+            lifecycle.cancelStartup(generation)
+            completion(AuroraNativeTunnelError.invalidProvisioning)
+            startupGate.finish(generation)
+            return
+        }
         let core: any AuroraPacketTunnelCore
         if configuration.nativeProvisioningIdentifier != nil {
             core = AuroraNativePacketTunnelCore()
