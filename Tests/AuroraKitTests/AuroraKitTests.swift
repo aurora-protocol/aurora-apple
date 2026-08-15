@@ -2443,6 +2443,107 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(exchanged, outbound)
     }
 
+    func testURLSessionServerClientDefaultSessionIsPrivateAndBounded() {
+        let client = URLSessionAuroraServerClient()
+        let configuration = client.session.configuration
+
+        XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertNil(configuration.urlCache)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertEqual(configuration.httpCookieAcceptPolicy, .never)
+        XCTAssertEqual(configuration.timeoutIntervalForRequest, 30)
+        XCTAssertEqual(configuration.timeoutIntervalForResource, 30)
+    }
+
+    func testURLSessionServerClientRejectsOversizedPacketResponseAtHeaders() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OversizedPacketResponseURLProtocol.self]
+        let client = URLSessionAuroraServerClient(session: URLSession(configuration: configuration))
+        let completion = AsyncCompletionSignal()
+        let inbound = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        )
+        let exchange = Task {
+            defer {
+                Task {
+                    await completion.signal()
+                }
+            }
+            _ = try? await client.exchangePacketBatch(
+                endpoint: URL(string: "https://relay.example:9443")!,
+                batch: inbound
+            )
+        }
+
+        for _ in 0..<20 {
+            if await completion.isSignaled {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let completedBeforeBody = await completion.isSignaled
+        exchange.cancel()
+        _ = await exchange.result
+
+        XCTAssertTrue(completedBeforeBody)
+    }
+
+    func testURLSessionServerClientRejectsOversizedIssuerResponseAtHeaders() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OversizedIssuerResponseURLProtocol.self]
+        let client = URLSessionAuroraServerClient(session: URLSession(configuration: configuration))
+        let completion = AsyncCompletionSignal()
+        let request = AuroraBlindRSAIssueRequest(
+            tokenNonce: Data(repeating: 0xa1, count: 32),
+            redemptionContextHash: Data(repeating: 0xb2, count: 48),
+            expiryUnix: 1_800_000_000
+        )
+        let exchange = Task {
+            defer {
+                Task {
+                    await completion.signal()
+                }
+            }
+            _ = try? await client.issueBlindRSAAdmissionToken(
+                endpoint: URL(string: "https://relay.example:9443")!,
+                request: request
+            )
+        }
+
+        for _ in 0..<20 {
+            if await completion.isSignaled {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let completedBeforeBody = await completion.isSignaled
+        exchange.cancel()
+        _ = await exchange.result
+
+        XCTAssertTrue(completedBeforeBody)
+    }
+
+    func testURLSessionServerClientRejectsOversizedIssuerResponseWithoutContentLength() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [IssuerURLProtocol.self]
+        let client = URLSessionAuroraServerClient(session: URLSession(configuration: configuration))
+        IssuerURLProtocol.setResponses([
+            IssuerURLProtocol.Response(
+                path: "/assets/app.bin",
+                contentType: "application/octet-stream",
+                body: Data(repeating: 0xa1, count: (1 << 20) + 1)
+            ),
+        ])
+
+        do {
+            _ = try await client.fetchIssuerMetadata(endpoint: URL(string: "https://relay.example:9443")!)
+            XCTFail("oversized issuer response unexpectedly succeeded")
+        } catch {
+            XCTAssertNotNil(error)
+        }
+    }
+
     func testURLSessionServerClientAcceptsPacketContentTypeParameters() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PacketExchangeURLProtocol.self]
@@ -3374,6 +3475,72 @@ private actor MockNativeIssuerTransport: AuroraNativeIssuerTransport {
         requestedBody = body
         return response
     }
+}
+
+private actor AsyncCompletionSignal {
+    private var signaled = false
+
+    func signal() {
+        signaled = true
+    }
+
+    var isSignaled: Bool {
+        signaled
+    }
+}
+
+private final class OversizedPacketResponseURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let maximumPacketBatchResponseBytes = 64 * (2 + 4 + 65_535) + 2
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: [
+                "Content-Type": "application/octet-stream",
+                "Content-Length": "\(Self.maximumPacketBatchResponseBytes + 1)",
+            ]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class OversizedIssuerResponseURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let maximumIssuerResponseBytes = 1 << 20
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: [
+                "Content-Type": "application/octet-stream",
+                "Content-Length": "\(Self.maximumIssuerResponseBytes + 1)",
+            ]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    }
+
+    override func stopLoading() {}
 }
 
 private final class PacketExchangeURLProtocol: URLProtocol, @unchecked Sendable {
