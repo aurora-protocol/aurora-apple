@@ -352,6 +352,7 @@ public struct URLSessionAuroraNativeIssuerTransport: AuroraNativeIssuerTransport
         let (responseBytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse,
               http.statusCode == 200,
+              Self.isBinaryContentType(http.value(forHTTPHeaderField: "Content-Type")),
               http.expectedContentLength <= Int64(Self.maximumResponseBytes)
         else {
             throw AuroraNativeTunnelError.unavailable
@@ -370,6 +371,15 @@ public struct URLSessionAuroraNativeIssuerTransport: AuroraNativeIssuerTransport
             throw AuroraNativeTunnelError.unavailable
         }
         return responseBody
+    }
+
+    private static func isBinaryContentType(_ value: String?) -> Bool {
+        guard let value else {
+            return false
+        }
+        let mediaType = value.split(separator: ";", maxSplits: 1)[0]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return mediaType.caseInsensitiveCompare("application/octet-stream") == .orderedSame
     }
 }
 

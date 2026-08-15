@@ -1221,6 +1221,29 @@ final class AuroraKitTests: XCTestCase {
         }
     }
 
+    func testNativeIssuerTransportRejectsNonBinaryContentType() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [IssuerURLProtocol.self]
+        let transport = URLSessionAuroraNativeIssuerTransport(configuration: configuration)
+        IssuerURLProtocol.setResponses([
+            IssuerURLProtocol.Response(
+                path: "/assets/issue/42",
+                contentType: "text/html",
+                body: Data([0x50, 0x60])
+            ),
+        ])
+
+        do {
+            _ = try await transport.postIssuerWork(
+                url: URL(string: "https://issuer.example/assets/issue/42")!,
+                body: Data([0x01, 0x02, 0x03])
+            )
+            XCTFail("non-binary native issuer response unexpectedly succeeded")
+        } catch {
+            XCTAssertNotNil(error)
+        }
+    }
+
     func testTunnelProfileRejectsInvalidProviderConfigurationEndpoint() throws {
         XCTAssertNil(AuroraTunnelProfile.configuration(from: [
             "endpoint": "not a server",
