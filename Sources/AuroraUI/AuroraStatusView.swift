@@ -1,3 +1,4 @@
+import Foundation
 import AuroraKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -259,13 +260,7 @@ public struct AuroraStatusView: View {
         guard case .success(let urls) = result else {
             return
         }
-        guard
-              let url = urls.first,
-              let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
-              let fileSize = values.fileSize,
-              fileSize > 0,
-              fileSize <= AuroraNativeProvisioningStore.maximumBytes
-        else {
+        guard let url = urls.first else {
             Task { _ = await controller.importNativeProvisioning(Data()) }
             return
         }
@@ -275,11 +270,18 @@ public struct AuroraStatusView: View {
                 url.stopAccessingSecurityScopedResource()
             }
         }
-        guard let provisioning = try? Data(contentsOf: url, options: .mappedIfSafe) else {
+        guard let fileHandle = try? FileHandle(forReadingFrom: url) else {
             Task { _ = await controller.importNativeProvisioning(Data()) }
             return
         }
-        guard provisioning.count <= AuroraNativeProvisioningStore.maximumBytes else {
+        defer {
+            try? fileHandle.close()
+        }
+        guard
+            let provisioning = try? fileHandle.read(upToCount: AuroraNativeProvisioningStore.maximumBytes + 1),
+            !provisioning.isEmpty,
+            provisioning.count <= AuroraNativeProvisioningStore.maximumBytes
+        else {
             Task { _ = await controller.importNativeProvisioning(Data()) }
             return
         }

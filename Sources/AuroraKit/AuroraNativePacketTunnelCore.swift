@@ -456,7 +456,7 @@ public actor AuroraNativePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketT
     }
 
     public func ingestPacketBatch(_ batch: AuroraPacketFlowBatch) async throws -> AuroraPacketFlowBatch {
-        _ = try AuroraPacketBatchCodec.encode(batch)
+        try AuroraPacketBatchCodec.validate(batch)
         let handle = try establishedHandle()
         var packets: [Data] = []
         for packet in batch.packets {
@@ -535,7 +535,7 @@ public actor AuroraNativePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketT
             }
         }
         let batch = AuroraPacketFlowBatch(packets: packets, protocolNumbers: protocols)
-        _ = try AuroraPacketBatchCodec.encode(batch)
+        try AuroraPacketBatchCodec.validate(batch)
         return batch
     }
 }

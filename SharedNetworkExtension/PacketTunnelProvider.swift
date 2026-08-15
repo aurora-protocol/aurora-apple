@@ -33,6 +33,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         let pathObserver = pathObserver
         let pathTransitionTracker = AuroraNetworkPathTransitionTracker()
         let pathOperationQueue = AuroraAsyncSerialQueue()
+        if configuration.nativeProvisioningIdentifier != nil,
+           !AuroraNativeProvisioningTrust.configureBundled() {
+            lifecycle.cancelStartup(generation)
+            completion(AuroraNativeTunnelError.invalidProvisioning)
+            startupGate.finish(generation)
+            return
+        }
         let core: any AuroraPacketTunnelCore
         if configuration.nativeProvisioningIdentifier != nil {
             core = AuroraNativePacketTunnelCore()
@@ -389,6 +396,10 @@ private final class NetworkPathObserver: @unchecked Sendable {
 
 private final class NetworkExtensionPacketFlow: AuroraPacketFlow, @unchecked Sendable {
     private let packetFlow: NEPacketTunnelFlow
+    private let readLock = NSLock()
+    private var readsReleased = false
+    private var nextReadIdentifier: UInt64 = 0
+    private var pendingRead: (identifier: UInt64, continuation: CheckedContinuation<AuroraPacketFlowBatch?, Never>)?
 
     init(packetFlow: NEPacketTunnelFlow) {
         self.packetFlow = packetFlow
@@ -396,9 +407,23 @@ private final class NetworkExtensionPacketFlow: AuroraPacketFlow, @unchecked Sen
 
     func readPacketBatch() async -> AuroraPacketFlowBatch? {
         await withCheckedContinuation { continuation in
+            readLock.lock()
+            guard !readsReleased, pendingRead == nil else {
+                readLock.unlock()
+                continuation.resume(returning: nil)
+                return
+            }
+            nextReadIdentifier &+= 1
+            if nextReadIdentifier == 0 {
+                nextReadIdentifier = 1
+            }
+            let readIdentifier = nextReadIdentifier
+            pendingRead = (identifier: readIdentifier, continuation: continuation)
+            readLock.unlock()
             packetFlow.readPackets { packets, protocols in
-                continuation.resume(
-                    returning: AuroraPacketFlowBatch(
+                self.finishRead(
+                    readIdentifier,
+                    batch: AuroraPacketFlowBatch(
                         packets: packets,
                         protocolNumbers: protocols.map(\.intValue)
                     )
@@ -407,8 +432,28 @@ private final class NetworkExtensionPacketFlow: AuroraPacketFlow, @unchecked Sen
         }
     }
 
+    func releasePendingRead() async {
+        let continuation = readLock.withLock {
+            readsReleased = true
+            defer { pendingRead = nil }
+            return pendingRead?.continuation
+        }
+        continuation?.resume(returning: nil)
+    }
+
     func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool {
         let protocols = batch.protocolNumbers.map { NSNumber(value: $0) }
         return packetFlow.writePackets(batch.packets, withProtocols: protocols)
+    }
+
+    private func finishRead(_ identifier: UInt64, batch: AuroraPacketFlowBatch) {
+        readLock.lock()
+        guard let pendingRead, pendingRead.identifier == identifier else {
+            readLock.unlock()
+            return
+        }
+        self.pendingRead = nil
+        readLock.unlock()
+        pendingRead.continuation.resume(returning: batch)
     }
 }

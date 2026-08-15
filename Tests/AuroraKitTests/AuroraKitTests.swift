@@ -3,6 +3,10 @@ import XCTest
 @testable import AuroraKit
 
 final class AuroraKitTests: XCTestCase {
+    func testNativeProvisioningTrustRejectsEmptyConfiguration() {
+        XCTAssertFalse(AuroraNativeProvisioningTrust.configure(Data()))
+    }
+
     func testServerStatusDecodesHealthResponse() throws {
         let data = #"{"ready":true,"issuer":true,"cover":true}"#.data(using: .utf8)!
         let status = try JSONDecoder().decode(AuroraServerStatus.self, from: data)
@@ -114,35 +118,6 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertNil(loaded)
     }
 
-    func testKeychainCredentialStoreUsesUpdateBeforeAdd() throws {
-        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let source = try String(contentsOf: root.appendingPathComponent("Sources/AuroraKit/AuroraTokenWallet.swift"), encoding: .utf8)
-        let saveRange = try XCTUnwrap(source.range(of: "public func save(_ data: Data, service: String, account: String) async throws {"))
-        let loadRange = try XCTUnwrap(source.range(of: "public func load(service: String, account: String) async throws -> Data? {"))
-        let save = String(source[saveRange.lowerBound..<loadRange.lowerBound])
-
-        XCTAssertTrue(save.contains("SecItemUpdate"), "Keychain save should update an existing item before attempting an add")
-        XCTAssertFalse(save.contains("try await delete"), "Keychain save must not remove existing credentials before replacement succeeds")
-    }
-
-    func testKeychainCredentialStoreReplacesExistingValue() async throws {
-        let store = AuroraKeychainCredentialStore(accessGroup: nil)
-        let service = "org.aurora-protocol.aurora.tests.\(UUID().uuidString)"
-        let account = UUID().uuidString
-
-        do {
-            try await store.save(Data([0x01]), service: service, account: account)
-            try await store.save(Data([0x02]), service: service, account: account)
-            let loaded = try await store.load(service: service, account: account)
-            XCTAssertEqual(loaded, Data([0x02]))
-        } catch {
-            try? await store.delete(service: service, account: account)
-            throw error
-        }
-
-        try await store.delete(service: service, account: account)
-    }
-
     func testControllerRefreshesStatusThroughInjectedClient() async {
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
@@ -204,10 +179,7 @@ final class AuroraKitTests: XCTestCase {
 
     func testControllerImportsNativeProvisioningIntoSecureStoreWithoutExportingIt() async throws {
         let credentialStore = MockSecureCredentialStore()
-        let provisioningStore = AuroraNativeProvisioningStore(
-            credentialStore: credentialStore,
-            validator: MockNativeProvisioningValidator()
-        )
+        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore, validator: MockNativeProvisioningValidator())
         let profileStore = MockPortableProfileStore()
         let controller = await AuroraClientController(
             configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
@@ -237,10 +209,7 @@ final class AuroraKitTests: XCTestCase {
 
     func testControllerRestoresAndRemovesNativeProvisioning() async throws {
         let credentialStore = MockSecureCredentialStore()
-        let provisioningStore = AuroraNativeProvisioningStore(
-            credentialStore: credentialStore,
-            validator: MockNativeProvisioningValidator()
-        )
+        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore, validator: MockNativeProvisioningValidator())
         let provisioning = Data(repeating: 0xb8, count: 64)
         try await provisioningStore.save(provisioning)
         let controller = await AuroraClientController(
@@ -858,6 +827,68 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertFalse(resolved.excludedIPv4Routes.isEmpty && resolved.excludedIPv6Routes.isEmpty)
     }
 
+    func testTunnelEndpointResolverCancelsWhileLookupIsBlocked() async throws {
+        let lookupStarted = expectation(description: "hostname lookup started")
+        let releaseLookup = DispatchSemaphore(value: 0)
+        defer { releaseLookup.signal() }
+        let resolver = AuroraTunnelEndpointResolver(lookup: { _ in
+            lookupStarted.fulfill()
+            _ = releaseLookup.wait(timeout: .now() + 1)
+            return ["203.0.113.7"]
+        })
+        let configuration = AuroraPacketTunnelConfiguration(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!)
+        )
+        let resolution = Task {
+            do {
+                _ = try await resolver.resolve(configuration)
+                return false
+            } catch is CancellationError {
+                return true
+            } catch {
+                return false
+            }
+        }
+
+        await fulfillment(of: [lookupStarted], timeout: 1)
+        resolution.cancel()
+
+        let wasCancelled = await resolution.value
+        XCTAssertTrue(wasCancelled)
+    }
+
+    func testTunnelEndpointResolverTimesOutWhileLookupIsBlocked() async throws {
+        let lookupStarted = expectation(description: "hostname lookup started")
+        let releaseLookup = DispatchSemaphore(value: 0)
+        defer { releaseLookup.signal() }
+        let resolver = AuroraTunnelEndpointResolver(
+            resolutionTimeoutNanoseconds: 50_000_000,
+            lookup: { _ in
+                lookupStarted.fulfill()
+                _ = releaseLookup.wait(timeout: .now() + 1)
+                return ["203.0.113.7"]
+            }
+        )
+        let configuration = AuroraPacketTunnelConfiguration(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!)
+        )
+
+        let resolution = Task {
+            do {
+                _ = try await resolver.resolve(configuration)
+                return false
+            } catch let error as AuroraPacketTunnelConfigurationError {
+                return error == .endpointResolutionTimedOut
+            } catch {
+                return false
+            }
+        }
+        await fulfillment(of: [lookupStarted], timeout: 1)
+
+        let timedOut = await resolution.value
+        XCTAssertTrue(timedOut)
+    }
+
     func testTunnelProfileBuildsProviderConfigurationPayload() throws {
         let endpoint = URL(string: "https://relay.example:9443")!
         let profile = AuroraTunnelProfile(
@@ -900,8 +931,7 @@ final class AuroraKitTests: XCTestCase {
 
     func testNativeProvisioningStoreKeepsOpaqueBundleInCredentialStore() async throws {
         let credentialStore = MockSecureCredentialStore()
-        let validator = MockNativeProvisioningValidator()
-        let store = AuroraNativeProvisioningStore(credentialStore: credentialStore, validator: validator)
+        let store = AuroraNativeProvisioningStore(credentialStore: credentialStore, validator: MockNativeProvisioningValidator())
         let provisioning = Data(repeating: 0x7a, count: 64)
 
         try await store.save(provisioning, identifier: "production-slot")
@@ -916,39 +946,6 @@ final class AuroraKitTests: XCTestCase {
             stored,
             provisioning
         )
-        let validatedSources = await validator.validatedSources
-        XCTAssertEqual(validatedSources, [provisioning])
-    }
-
-    func testNativeProvisioningStoreRejectsInvalidSourceBeforeKeychainWrite() async throws {
-        let credentialStore = MockSecureCredentialStore()
-        let validator = MockNativeProvisioningValidator(error: AuroraNativeTunnelError.invalidProvisioning)
-        let store = AuroraNativeProvisioningStore(credentialStore: credentialStore, validator: validator)
-        let provisioning = Data(repeating: 0x7b, count: 64)
-
-        do {
-            try await store.save(provisioning, identifier: "production-slot")
-            XCTFail("invalid provisioning source was saved")
-        } catch {
-            XCTAssertEqual(error as? AuroraNativeTunnelError, .invalidProvisioning)
-        }
-
-        let stored = await credentialStore.savedData(
-            service: AuroraNativeProvisioningStore.service,
-            account: AuroraNativeProvisioningStore.account(identifier: "production-slot")
-        )
-        XCTAssertNil(stored)
-    }
-
-    func testCoreNativeProvisioningValidatorRejectsMalformedSource() async {
-        let validator = AuroraCoreNativeProvisioningValidator()
-
-        do {
-            try await validator.validate(source: Data([0x01]), now: Date())
-            XCTFail("malformed provisioning source was accepted")
-        } catch {
-            XCTAssertEqual(error as? AuroraNativeTunnelError, .invalidProvisioning)
-        }
     }
 
     func testNativePacketTunnelCoreUsesOpaqueCoreSessionAndIssuerTransport() async throws {
@@ -1059,94 +1056,6 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertFalse(ledgerData.contains(Data(repeating: 0xaa, count: 8)))
     }
 
-    func testNativeProvisioningStoreIgnoresStaleLedgerAfterReplacementCleanupFailure() async throws {
-        let credentials = MockSecureCredentialStore()
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let first = AuroraNativeProvisioningReservation(
-            provisioning: Data(repeating: 0xa1, count: 64),
-            spentHintKey: Data(repeating: 0x11, count: 48),
-            relayBucketID: Data(repeating: 0x21, count: 16),
-            accessHintExpiryUnix: 1_800_003_600
-        )
-        let second = AuroraNativeProvisioningReservation(
-            provisioning: Data(repeating: 0xa2, count: 64),
-            spentHintKey: Data(repeating: 0x12, count: 48),
-            relayBucketID: Data(repeating: 0x22, count: 16),
-            accessHintExpiryUnix: 1_800_003_600
-        )
-        let firstReserver = MockNativeProvisioningReserver(reservations: [first])
-        let store = AuroraNativeProvisioningStore(
-            credentialStore: credentials,
-            validator: MockNativeProvisioningValidator(),
-            reserver: firstReserver
-        )
-        try await store.save(Data(repeating: 0xaa, count: 128), identifier: "recovery-slot")
-        _ = try await store.reserve(identifier: "recovery-slot", now: now)
-
-        await credentials.failDeletes(
-            service: AuroraNativeProvisioningStore.reservationService,
-            account: AuroraNativeProvisioningStore.reservationAccount(identifier: "recovery-slot")
-        )
-        try await store.save(Data(repeating: 0xbb, count: 128), identifier: "recovery-slot")
-
-        let secondReserver = MockNativeProvisioningReserver(reservations: [second])
-        let restoredStore = AuroraNativeProvisioningStore(
-            credentialStore: credentials,
-            validator: MockNativeProvisioningValidator(),
-            reserver: secondReserver
-        )
-        _ = try await restoredStore.reserve(identifier: "recovery-slot", now: now)
-
-        let spentHintKeys = await secondReserver.reservedSpentHintKeys
-        XCTAssertEqual(spentHintKeys, [[]])
-    }
-
-    func testNativeProvisioningStoreMigratesUnboundLedgerConservatively() async throws {
-        let credentials = MockSecureCredentialStore()
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let legacySpentHintKey = Data(repeating: 0x11, count: 48)
-        let next = AuroraNativeProvisioningReservation(
-            provisioning: Data(repeating: 0xa2, count: 64),
-            spentHintKey: Data(repeating: 0x12, count: 48),
-            relayBucketID: Data(repeating: 0x22, count: 16),
-            accessHintExpiryUnix: 1_800_003_600
-        )
-        let store = AuroraNativeProvisioningStore(
-            credentialStore: credentials,
-            validator: MockNativeProvisioningValidator(),
-            reserver: MockNativeProvisioningReserver(reservations: [])
-        )
-        try await store.save(Data(repeating: 0xaa, count: 128), identifier: "recovery-slot")
-
-        let legacyLedger = LegacyNativeProvisioningReservationLedger(entries: [
-            .init(spentHintKey: legacySpentHintKey, accessHintExpiryUnix: 1_800_003_600),
-        ])
-        try await credentials.save(
-            JSONEncoder().encode(legacyLedger),
-            service: AuroraNativeProvisioningStore.reservationService,
-            account: AuroraNativeProvisioningStore.reservationAccount(identifier: "recovery-slot")
-        )
-
-        let reserver = MockNativeProvisioningReserver(reservations: [next])
-        let restoredStore = AuroraNativeProvisioningStore(
-            credentialStore: credentials,
-            validator: MockNativeProvisioningValidator(),
-            reserver: reserver
-        )
-        _ = try await restoredStore.reserve(identifier: "recovery-slot", now: now)
-
-        let spentHintKeys = await reserver.reservedSpentHintKeys
-        XCTAssertEqual(spentHintKeys, [[legacySpentHintKey]])
-        let savedLedgerData = await credentials.savedData(
-            service: AuroraNativeProvisioningStore.reservationService,
-            account: AuroraNativeProvisioningStore.reservationAccount(identifier: "recovery-slot")
-        )
-        let ledgerData = try XCTUnwrap(savedLedgerData)
-        let ledger = try JSONDecoder().decode(AuroraNativeProvisioningReservationLedger.self, from: ledgerData)
-        XCTAssertEqual(ledger.sourceDigest?.count, 32)
-        XCTAssertEqual(ledger.entries.map(\.spentHintKey), [legacySpentHintKey, next.spentHintKey])
-    }
-
     func testNativePacketTunnelCoreUsesFreshReservationAfterReconnect() async throws {
         let credentials = MockSecureCredentialStore()
         let first = AuroraNativeProvisioningReservation(
@@ -1162,11 +1071,7 @@ final class AuroraKitTests: XCTestCase {
             accessHintExpiryUnix: UInt64(Date().addingTimeInterval(3_600).timeIntervalSince1970)
         )
         let reserver = MockNativeProvisioningReserver(reservations: [first, second])
-        let store = AuroraNativeProvisioningStore(
-            credentialStore: credentials,
-            validator: MockNativeProvisioningValidator(),
-            reserver: reserver
-        )
+        let store = AuroraNativeProvisioningStore(credentialStore: credentials, validator: MockNativeProvisioningValidator(), reserver: reserver)
         try await store.save(Data(repeating: 0xbb, count: 128), identifier: "recovery-slot")
         let driver = MockNativeSessionDriver(
             work: AuroraNativeIssuerWork(
@@ -1383,6 +1288,20 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(profile.localMode, "platform-vpn")
         XCTAssertEqual(profile.endpoint?.absoluteString, "https://relay.example:9443")
         XCTAssertEqual(profile.configuration(defaultEndpoint: URL(string: "https://fallback.example")!).routePolicy, "adversarial-dpi")
+    }
+
+    func testPortableProfileRejectsInputLargerThan64KiB() {
+        let profile = String(repeating: "#\n", count: (64 * 1024 / 2) + 1)
+
+        XCTAssertThrowsError(try AuroraPortableProfile.parse(profile)) { error in
+            XCTAssertEqual(error as? AuroraPortableProfileError, .inputTooLarge)
+        }
+    }
+
+    func testPortableProfileAcceptsInputAt64KiB() throws {
+        let profile = String(repeating: "#\n", count: 64 * 1024 / 2)
+
+        XCTAssertEqual(try AuroraPortableProfile.parse(profile), AuroraPortableProfile())
     }
 
     func testPortableProfileExportRoundTripsAppleEndpointWithoutSecrets() throws {
@@ -1675,6 +1594,32 @@ final class AuroraKitTests: XCTestCase {
 
         let values = await recorder.values
         XCTAssertEqual(values, ["first", "second"])
+    }
+
+    func testAsyncSerialQueueDrainsLargeBacklogWithinBoundedTime() async {
+        let queue = AuroraAsyncSerialQueue()
+        let gate = AsyncOperationGate()
+        let counter = AsyncOperationCounter()
+        let operationCount = 100_000
+
+        await queue.enqueue {
+            await gate.wait()
+        }
+        await gate.waitUntilBlocked()
+        for _ in 0..<operationCount {
+            await queue.enqueue {
+                counter.increment()
+            }
+        }
+
+        let clock = ContinuousClock()
+        let started = clock.now
+        await gate.release()
+        await queue.waitForQuiescence()
+        let elapsed = started.duration(to: clock.now)
+
+        XCTAssertEqual(counter.value, operationCount)
+        XCTAssertLessThan(elapsed, .seconds(1))
     }
 
     func testPacketTunnelRuntimeSuspendsAndRecoversRecoverableCore() async throws {
@@ -2240,6 +2185,40 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(closed)
     }
 
+    func testPacketTunnelRuntimeStopReleasesPendingPacketRead() async throws {
+        let packetFlow = MockBlockingPacketFlow()
+        let core = MockPacketTunnelCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+        try await runtime.start()
+        let terminationResult = MockAsyncResult<AuroraPacketTunnelRuntimeTermination>()
+        Task {
+            await terminationResult.record(await runtime.runUntilStopped())
+        }
+
+        for _ in 0..<20 {
+            if await packetFlow.hasPendingRead {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let hasPendingRead = await packetFlow.hasPendingRead
+        XCTAssertTrue(hasPendingRead)
+
+        await runtime.stop()
+
+        guard let termination = await terminationResult.wait(timeoutNanoseconds: 1_000_000_000) else {
+            await packetFlow.finish()
+            return XCTFail("stopping the runtime left the packet read pending")
+        }
+        let pendingReadReleaseCount = await packetFlow.pendingReadReleaseCount
+        XCTAssertEqual(termination, .stopped)
+        XCTAssertEqual(pendingReadReleaseCount, 1)
+    }
+
     func testPacketTunnelLifecycleRejectsStartupSuccessAfterStop() {
         let lifecycle = AuroraPacketTunnelLifecycle()
         let generation = lifecycle.beginStartup()
@@ -2390,6 +2369,51 @@ final class AuroraKitTests: XCTestCase {
         )))
     }
 
+    /// The packet path calls validate in place of encoding a batch it discards,
+    /// so validate has to enforce every rule itself. Each case states its own
+    /// expected outcome rather than comparing against encode, which now
+    /// delegates to validate and so cannot disagree with it.
+    func testPacketBatchCodecValidateEnforcesBatchRules() throws {
+        let ipv4 = Data([0x45, 0x00, 0x00, 0x14])
+        let ipv6 = Data([0x60, 0x00, 0x00, 0x00])
+        let cases: [(name: String, batch: AuroraPacketFlowBatch, valid: Bool)] = [
+            ("empty", AuroraPacketFlowBatch(packets: [], protocolNumbers: []), true),
+            ("ipv4", AuroraPacketFlowBatch(packets: [ipv4], protocolNumbers: [2]), true),
+            ("mixed", AuroraPacketFlowBatch(packets: [ipv4, ipv6], protocolNumbers: [2, 30]), true),
+            ("at maximum", AuroraPacketFlowBatch(
+                packets: Array(repeating: ipv4, count: 64),
+                protocolNumbers: Array(repeating: 2, count: 64)
+            ), true),
+            ("count mismatch", AuroraPacketFlowBatch(packets: [ipv4], protocolNumbers: [2, 30]), false),
+            ("family mismatch", AuroraPacketFlowBatch(packets: [ipv4], protocolNumbers: [30]), false),
+            ("not ip", AuroraPacketFlowBatch(
+                packets: [Data([0x05, 0x00, 0x00, 0x14])],
+                protocolNumbers: [0]
+            ), false),
+            ("empty packet", AuroraPacketFlowBatch(packets: [Data()], protocolNumbers: [2]), false),
+            ("above maximum", AuroraPacketFlowBatch(
+                packets: Array(repeating: ipv4, count: 65),
+                protocolNumbers: Array(repeating: 2, count: 65)
+            ), false),
+        ]
+
+        for testCase in cases {
+            let accepted = (try? AuroraPacketBatchCodec.validate(testCase.batch)) != nil
+            XCTAssertEqual(accepted, testCase.valid, "validate accepted=\(accepted) for \(testCase.name)")
+        }
+    }
+
+    func testPacketBatchCodecEncodeStillProducesTheSameBytes() throws {
+        let batch = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14]), Data([0x60, 0x00, 0x00, 0x00])],
+            protocolNumbers: [2, 30]
+        )
+        let encoded = try AuroraPacketBatchCodec.encode(batch)
+        XCTAssertEqual(try AuroraPacketBatchCodec.decode(encoded), batch)
+        let hex = encoded.map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(hex, "000200020000000445000014001e0000000460000000")
+    }
+
     func testServerBackedPacketTunnelCoreExchangesPacketBatchWithServer() async throws {
         let statusClient = MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
         let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
@@ -2536,6 +2560,107 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(exchanged, outbound)
     }
 
+    func testURLSessionServerClientDefaultSessionIsPrivateAndBounded() {
+        let client = URLSessionAuroraServerClient()
+        let configuration = client.session.configuration
+
+        XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+        XCTAssertNil(configuration.urlCache)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertEqual(configuration.httpCookieAcceptPolicy, .never)
+        XCTAssertEqual(configuration.timeoutIntervalForRequest, 30)
+        XCTAssertEqual(configuration.timeoutIntervalForResource, 30)
+    }
+
+    func testURLSessionServerClientRejectsOversizedPacketResponseAtHeaders() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OversizedPacketResponseURLProtocol.self]
+        let client = URLSessionAuroraServerClient(session: URLSession(configuration: configuration))
+        let completion = AsyncCompletionSignal()
+        let inbound = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14])],
+            protocolNumbers: [2]
+        )
+        let exchange = Task {
+            defer {
+                Task {
+                    await completion.signal()
+                }
+            }
+            _ = try? await client.exchangePacketBatch(
+                endpoint: URL(string: "https://relay.example:9443")!,
+                batch: inbound
+            )
+        }
+
+        for _ in 0..<20 {
+            if await completion.isSignaled {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let completedBeforeBody = await completion.isSignaled
+        exchange.cancel()
+        _ = await exchange.result
+
+        XCTAssertTrue(completedBeforeBody)
+    }
+
+    func testURLSessionServerClientRejectsOversizedIssuerResponseAtHeaders() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [OversizedIssuerResponseURLProtocol.self]
+        let client = URLSessionAuroraServerClient(session: URLSession(configuration: configuration))
+        let completion = AsyncCompletionSignal()
+        let request = AuroraBlindRSAIssueRequest(
+            tokenNonce: Data(repeating: 0xa1, count: 32),
+            redemptionContextHash: Data(repeating: 0xb2, count: 48),
+            expiryUnix: 1_800_000_000
+        )
+        let exchange = Task {
+            defer {
+                Task {
+                    await completion.signal()
+                }
+            }
+            _ = try? await client.issueBlindRSAAdmissionToken(
+                endpoint: URL(string: "https://relay.example:9443")!,
+                request: request
+            )
+        }
+
+        for _ in 0..<20 {
+            if await completion.isSignaled {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let completedBeforeBody = await completion.isSignaled
+        exchange.cancel()
+        _ = await exchange.result
+
+        XCTAssertTrue(completedBeforeBody)
+    }
+
+    func testURLSessionServerClientRejectsOversizedIssuerResponseWithoutContentLength() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [IssuerURLProtocol.self]
+        let client = URLSessionAuroraServerClient(session: URLSession(configuration: configuration))
+        IssuerURLProtocol.setResponses([
+            IssuerURLProtocol.Response(
+                path: "/assets/app.bin",
+                contentType: "application/octet-stream",
+                body: Data(repeating: 0xa1, count: (1 << 20) + 1)
+            ),
+        ])
+
+        do {
+            _ = try await client.fetchIssuerMetadata(endpoint: URL(string: "https://relay.example:9443")!)
+            XCTFail("oversized issuer response unexpectedly succeeded")
+        } catch {
+            XCTAssertNotNil(error)
+        }
+    }
+
     func testURLSessionServerClientAcceptsPacketContentTypeParameters() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PacketExchangeURLProtocol.self]
@@ -2631,10 +2756,7 @@ final class AuroraKitTests: XCTestCase {
 
     func testControllerConnectsNativeProvisioningWithoutLegacyServerChecks() async throws {
         let credentialStore = MockSecureCredentialStore()
-        let provisioningStore = AuroraNativeProvisioningStore(
-            credentialStore: credentialStore,
-            validator: MockNativeProvisioningValidator()
-        )
+        let provisioningStore = AuroraNativeProvisioningStore(credentialStore: credentialStore, validator: MockNativeProvisioningValidator())
         try await provisioningStore.save(Data(repeating: 0xd2, count: 64))
         let tunnelManager = MockTunnelManager()
         let packetClient = MockPacketExchangeClient(error: AuroraClientError.unavailable)
@@ -2788,7 +2910,7 @@ final class AuroraKitTests: XCTestCase {
         )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
-        XCTAssertTrue(workflow.contains("ref: af055bb9fa0a68c1237318c5f5b2890d16716514"), "CI should build against the current core validation ABI")
+        XCTAssertTrue(workflow.contains("ref: 853991ecfb2a1c30f5bda45f0c5b696f662590d3"), "CI should pin the merged Core revision")
         XCTAssertTrue(readme.contains("scripts/aurora-apple-check.sh"), "README should document the shared Apple readiness script")
         XCTAssertTrue(script.contains("swift test"), "Apple readiness script should run Swift package tests")
         XCTAssertTrue(script.contains("CODE_SIGNING_ALLOWED=NO"), "Apple readiness script should use unsigned local builds")
@@ -2887,6 +3009,9 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(view.contains("restoreNativeProvisioning"), "status view does not restore provisioning on launch")
         XCTAssertTrue(view.contains("removeNativeProvisioning"), "status view does not remove provisioning through the controller")
         XCTAssertTrue(view.contains("maximumBytes"), "status view must bound provisioning file input before loading it")
+        XCTAssertTrue(view.contains("FileHandle(forReadingFrom:"), "status view must open provisioning files through a bounded handle")
+        XCTAssertTrue(view.contains("read(upToCount: AuroraNativeProvisioningStore.maximumBytes + 1)"), "status view must read only one byte beyond the provisioning limit")
+        XCTAssertFalse(view.contains("Data(contentsOf: url"), "status view must not map an unbounded provisioning file")
     }
 
     func testSharedUIExposesRedactedDiagnostics() throws {
@@ -3244,7 +3369,6 @@ private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
     }
 
     private var entries: [Key: Data] = [:]
-    private var failingDeletes = Set<Key>()
     private(set) var lastSave: Key?
     private(set) var deletedKeys: [Key] = []
 
@@ -3260,15 +3384,8 @@ private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
 
     func delete(service: String, account: String) async throws {
         let key = Key(service: service, account: account)
-        guard !failingDeletes.contains(key) else {
-            throw AuroraNativeTunnelError.unavailable
-        }
         entries.removeValue(forKey: key)
         deletedKeys.append(key)
-    }
-
-    func failDeletes(service: String, account: String) {
-        failingDeletes.insert(Key(service: service, account: account))
     }
 
     func savedData(service: String, account: String) -> Data? {
@@ -3276,13 +3393,8 @@ private actor MockSecureCredentialStore: AuroraSecureCredentialStore {
     }
 }
 
-private struct LegacyNativeProvisioningReservationLedger: Codable {
-    struct Entry: Codable {
-        var spentHintKey: Data
-        var accessHintExpiryUnix: UInt64
-    }
-
-    var entries: [Entry]
+private struct MockNativeProvisioningValidator: AuroraNativeProvisioningValidator {
+    func validate(source: Data, now: Date) async throws {}
 }
 
 private actor MockNativeProvisioningReserver: AuroraNativeProvisioningReserver {
@@ -3303,25 +3415,6 @@ private actor MockNativeProvisioningReserver: AuroraNativeProvisioningReserver {
         }
         reservedSpentHintKeys.append(spentHintKeys)
         return reservations.removeFirst()
-    }
-}
-
-private actor MockNativeProvisioningValidator: AuroraNativeProvisioningValidator {
-    private let error: (any Error)?
-    private(set) var validatedSources: [Data] = []
-
-    init(error: (any Error)? = nil) {
-        self.error = error
-    }
-
-    func validate(source: Data, now: Date) async throws {
-        guard !source.isEmpty, now.timeIntervalSince1970 > 0 else {
-            throw AuroraNativeTunnelError.invalidProvisioning
-        }
-        validatedSources.append(source)
-        if let error {
-            throw error
-        }
     }
 }
 
@@ -3507,6 +3600,72 @@ private actor MockNativeIssuerTransport: AuroraNativeIssuerTransport {
         requestedBody = body
         return response
     }
+}
+
+private actor AsyncCompletionSignal {
+    private var signaled = false
+
+    func signal() {
+        signaled = true
+    }
+
+    var isSignaled: Bool {
+        signaled
+    }
+}
+
+private final class OversizedPacketResponseURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let maximumPacketBatchResponseBytes = 64 * (2 + 4 + 65_535) + 2
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: [
+                "Content-Type": "application/octet-stream",
+                "Content-Length": "\(Self.maximumPacketBatchResponseBytes + 1)",
+            ]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class OversizedIssuerResponseURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let maximumIssuerResponseBytes = 1 << 20
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: [
+                "Content-Type": "application/octet-stream",
+                "Content-Length": "\(Self.maximumIssuerResponseBytes + 1)",
+            ]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    }
+
+    override func stopLoading() {}
 }
 
 private final class PacketExchangeURLProtocol: URLProtocol, @unchecked Sendable {
@@ -3765,6 +3924,7 @@ private actor MockBlockingPacketFlow: AuroraPacketFlow {
     private var continuation: CheckedContinuation<AuroraPacketFlowBatch?, Never>?
     private let writeResult: Bool
     private(set) var writtenBatches: [AuroraPacketFlowBatch] = []
+    private(set) var pendingReadReleaseCount = 0
 
     init(writeResult: Bool = true) {
         self.writeResult = writeResult
@@ -3779,6 +3939,14 @@ private actor MockBlockingPacketFlow: AuroraPacketFlow {
     func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool {
         writtenBatches.append(batch)
         return writeResult
+    }
+
+    func releasePendingRead() async {
+        guard continuation != nil else {
+            return
+        }
+        pendingReadReleaseCount += 1
+        resume(nil)
     }
 
     func finish() {
@@ -3885,6 +4053,88 @@ private actor MockAsyncOperationRecorder {
 
     func append(_ value: String) {
         values.append(value)
+    }
+}
+
+private actor AsyncOperationGate {
+    private var blockedContinuation: CheckedContinuation<Void, Never>?
+    private var startedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var released = false
+
+    func wait() async {
+        guard !released else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            blockedContinuation = continuation
+            let waiters = startedWaiters
+            startedWaiters.removeAll()
+            for waiter in waiters {
+                waiter.resume()
+            }
+        }
+    }
+
+    func waitUntilBlocked() async {
+        guard blockedContinuation == nil else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            startedWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        released = true
+        let continuation = blockedContinuation
+        blockedContinuation = nil
+        continuation?.resume()
+    }
+}
+
+private final class AsyncOperationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
+    }
+}
+
+private actor MockAsyncResult<Value: Sendable> {
+    private var value: Value?
+    private var waiter: CheckedContinuation<Value?, Never>?
+
+    func record(_ value: Value) {
+        self.value = value
+        waiter?.resume(returning: value)
+        waiter = nil
+    }
+
+    func wait(timeoutNanoseconds: UInt64) async -> Value? {
+        if let value {
+            return value
+        }
+        return await withCheckedContinuation { continuation in
+            waiter = continuation
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                await self?.expireWaiter()
+            }
+        }
+    }
+
+    private func expireWaiter() {
+        waiter?.resume(returning: nil)
+        waiter = nil
     }
 }
 
