@@ -22,14 +22,15 @@ public enum AuroraPacketBatchCodec {
     private static let maxPackets = 64
     private static let maxPacketBytes = 65_535
 
-    public static func encode(_ batch: AuroraPacketFlowBatch) throws -> Data {
+    /// Checks that a batch is encodable without producing the encoding. Callers
+    /// on the packet path need the check, not the bytes, and encoding a full
+    /// batch copies every packet only to discard it.
+    public static func validate(_ batch: AuroraPacketFlowBatch) throws {
         guard batch.packets.count == batch.protocolNumbers.count,
               batch.packets.count <= maxPackets
         else {
             throw AuroraPacketBatchCodecError.invalidBatch
         }
-        var out = Data()
-        appendUInt16(UInt16(batch.packets.count), to: &out)
         for (packet, protocolNumber) in zip(batch.packets, batch.protocolNumbers) {
             guard let packetProtocolNumber = packetProtocolNumber(for: packet),
                   packetProtocolNumber == protocolNumber
@@ -43,11 +44,24 @@ public enum AuroraPacketBatchCodec {
             else {
                 throw AuroraPacketBatchCodecError.invalidBatch
             }
+        }
+    }
+
+    public static func encode(_ batch: AuroraPacketFlowBatch) throws -> Data {
+        try validate(batch)
+        var out = Data()
+        out.reserveCapacity(encodedSize(of: batch))
+        appendUInt16(UInt16(batch.packets.count), to: &out)
+        for (packet, protocolNumber) in zip(batch.packets, batch.protocolNumbers) {
             appendUInt16(UInt16(protocolNumber), to: &out)
             appendUInt32(UInt32(packet.count), to: &out)
             out.append(packet)
         }
         return out
+    }
+
+    private static func encodedSize(of batch: AuroraPacketFlowBatch) -> Int {
+        batch.packets.reduce(2) { total, packet in total + 2 + 4 + packet.count }
     }
 
     public static func decode(_ data: Data) throws -> AuroraPacketFlowBatch {
@@ -542,7 +556,7 @@ public actor AuroraPacketTunnelRuntime {
     }
 
     private static func canWriteToPacketFlow(_ batch: AuroraPacketFlowBatch) -> Bool {
-        (try? AuroraPacketBatchCodec.encode(batch)) != nil
+        (try? AuroraPacketBatchCodec.validate(batch)) != nil
     }
 }
 
