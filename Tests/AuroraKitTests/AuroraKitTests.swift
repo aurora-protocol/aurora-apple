@@ -1221,6 +1221,20 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(profile.configuration(defaultEndpoint: URL(string: "https://fallback.example")!).routePolicy, "adversarial-dpi")
     }
 
+    func testPortableProfileRejectsInputLargerThan64KiB() {
+        let profile = String(repeating: "#\n", count: (64 * 1024 / 2) + 1)
+
+        XCTAssertThrowsError(try AuroraPortableProfile.parse(profile)) { error in
+            XCTAssertEqual(error as? AuroraPortableProfileError, .inputTooLarge)
+        }
+    }
+
+    func testPortableProfileAcceptsInputAt64KiB() throws {
+        let profile = String(repeating: "#\n", count: 64 * 1024 / 2)
+
+        XCTAssertEqual(try AuroraPortableProfile.parse(profile), AuroraPortableProfile())
+    }
+
     func testPortableProfileExportRoundTripsAppleEndpointWithoutSecrets() throws {
         let profile = AuroraPortableProfile(
             configuration: AuroraConfiguration(

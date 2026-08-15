@@ -52,6 +52,7 @@ public struct AuroraConfiguration: Equatable, Sendable {
 }
 
 public enum AuroraPortableProfileError: Error, Equatable, Sendable {
+    case inputTooLarge
     case missingEquals(line: Int)
     case keyOutsideTable(String)
     case unknownTable(String)
@@ -63,6 +64,7 @@ public enum AuroraPortableProfileError: Error, Equatable, Sendable {
 
 public struct AuroraPortableProfile: Equatable, Sendable {
     public static let appleExtensionSection = "x.aurora.apple"
+    public static let maximumInputBytes = 64 * 1024
 
     public var endpoint: URL?
     public var version: String
@@ -139,6 +141,9 @@ public struct AuroraPortableProfile: Equatable, Sendable {
     }
 
     public static func parse(_ text: String) throws -> AuroraPortableProfile {
+        guard text.utf8.count <= maximumInputBytes else {
+            throw AuroraPortableProfileError.inputTooLarge
+        }
         var profile = AuroraPortableProfile()
         var section = ""
         let lines = text.components(separatedBy: .newlines)
