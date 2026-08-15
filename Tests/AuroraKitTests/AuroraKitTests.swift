@@ -2645,6 +2645,14 @@ final class AuroraKitTests: XCTestCase {
             bridge.contains("AuroraCoreZeroFree(ptr, outLen)"),
             "Core bridge should scrub native response buffers before releasing them"
         )
+        XCTAssertTrue(
+            bridge.contains("input.count <= maximumCallInputBytes"),
+            "Core bridge should bound Data before converting its length for the C ABI"
+        )
+        XCTAssertTrue(
+            bridge.contains("Int(outLen) <= maximumCallOutputBytes"),
+            "Core bridge should bound native output before copying it into Swift memory"
+        )
     }
 
     func testProjectDeclaresPacketTunnelEntitlements() throws {
