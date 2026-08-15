@@ -9,4 +9,4 @@ DerivedData/
 .DS_Store
 Vendor/AuroraCore.xcframework/
 Vendor/.auroracore-build/
-Sources/AuroraKit/Resources/AuroraSignedSeedRoots.bin
+Sources/AuroraKit/Resources/AuroraSignedSeedTrust.bin

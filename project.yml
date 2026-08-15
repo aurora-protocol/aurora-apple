@@ -16,12 +16,12 @@ targets:
     platform: iOS
     sources:
       - path: Sources/AuroraKit
-      - path: Sources/AuroraKit/Resources/AuroraSignedSeedRoots.bin
+      - path: Sources/AuroraKit/Resources/AuroraSignedSeedTrust.bin
         buildPhase: resources
         optional: true
     preBuildScripts:
       - name: Stage signed-seed roots
-        path: scripts/prepare-signed-seed-roots.sh
+        path: scripts/prepare-native-trust-resource.sh
         basedOnDependencyAnalysis: false
     dependencies:
       - framework: Vendor/AuroraCore.xcframework
@@ -38,12 +38,12 @@ targets:
     platform: macOS
     sources:
       - path: Sources/AuroraKit
-      - path: Sources/AuroraKit/Resources/AuroraSignedSeedRoots.bin
+      - path: Sources/AuroraKit/Resources/AuroraSignedSeedTrust.bin
         buildPhase: resources
         optional: true
     preBuildScripts:
       - name: Stage signed-seed roots
-        path: scripts/prepare-signed-seed-roots.sh
+        path: scripts/prepare-native-trust-resource.sh
         basedOnDependencyAnalysis: false
     dependencies:
       - framework: Vendor/AuroraCore.xcframework

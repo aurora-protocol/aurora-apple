@@ -14,8 +14,13 @@ export CLANG_MODULE_CACHE_PATH
 
 mkdir -p "$SWIFTPM_CACHE_PATH" "$SWIFTPM_CONFIG_PATH" "$SWIFTPM_SECURITY_PATH" "$CLANG_MODULE_CACHE_PATH"
 
+scripts/verify-core-abi.sh
+
 # Build the embedded portable core first; AuroraKit links it (Section 35.10).
 scripts/build-auroracore-xcframework.sh
+
+scripts/verify-app-bundles-test.sh
+scripts/verify-signed-entitlements-test.sh
 
 swift test \
   --cache-path "$SWIFTPM_CACHE_PATH" \
