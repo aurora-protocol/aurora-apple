@@ -12,7 +12,7 @@ set -eu
 cd "$(dirname "$0")/.."
 APPLE_DIR="$PWD"
 AURORA_CORE_DIR="${AURORA_CORE_DIR:-$APPLE_DIR/../aurora-core}"
-EXPECTED_CORE_REVISION="afbb02b162e8214b2ac0d6c9927af68d5713b516"
+EXPECTED_CORE_REVISION="d01738e9bf97e287aa38d1162beda662cad1c6ee"
 OUT_DIR="${OUT_DIR:-$APPLE_DIR/Vendor}"
 BUILD_DIR="$OUT_DIR/.auroracore-build"
 PKG="./mobile/auroracore"

@@ -2763,7 +2763,7 @@ final class AuroraKitTests: XCTestCase {
         )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
-        let coreRevision = "afbb02b162e8214b2ac0d6c9927af68d5713b516"
+        let coreRevision = "d01738e9bf97e287aa38d1162beda662cad1c6ee"
         XCTAssertTrue(
             workflow.contains("ref: \(coreRevision)"),
             "CI should pin the reviewed Core ABI revision"
