@@ -823,6 +823,68 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertFalse(resolved.excludedIPv4Routes.isEmpty && resolved.excludedIPv6Routes.isEmpty)
     }
 
+    func testTunnelEndpointResolverCancelsWhileLookupIsBlocked() async throws {
+        let lookupStarted = expectation(description: "hostname lookup started")
+        let releaseLookup = DispatchSemaphore(value: 0)
+        defer { releaseLookup.signal() }
+        let resolver = AuroraTunnelEndpointResolver(lookup: { _ in
+            lookupStarted.fulfill()
+            _ = releaseLookup.wait(timeout: .now() + 1)
+            return ["203.0.113.7"]
+        })
+        let configuration = AuroraPacketTunnelConfiguration(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!)
+        )
+        let resolution = Task {
+            do {
+                _ = try await resolver.resolve(configuration)
+                return false
+            } catch is CancellationError {
+                return true
+            } catch {
+                return false
+            }
+        }
+
+        await fulfillment(of: [lookupStarted], timeout: 1)
+        resolution.cancel()
+
+        let wasCancelled = await resolution.value
+        XCTAssertTrue(wasCancelled)
+    }
+
+    func testTunnelEndpointResolverTimesOutWhileLookupIsBlocked() async throws {
+        let lookupStarted = expectation(description: "hostname lookup started")
+        let releaseLookup = DispatchSemaphore(value: 0)
+        defer { releaseLookup.signal() }
+        let resolver = AuroraTunnelEndpointResolver(
+            resolutionTimeoutNanoseconds: 50_000_000,
+            lookup: { _ in
+                lookupStarted.fulfill()
+                _ = releaseLookup.wait(timeout: .now() + 1)
+                return ["203.0.113.7"]
+            }
+        )
+        let configuration = AuroraPacketTunnelConfiguration(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!)
+        )
+
+        let resolution = Task {
+            do {
+                _ = try await resolver.resolve(configuration)
+                return false
+            } catch let error as AuroraPacketTunnelConfigurationError {
+                return error == .endpointResolutionTimedOut
+            } catch {
+                return false
+            }
+        }
+        await fulfillment(of: [lookupStarted], timeout: 1)
+
+        let timedOut = await resolution.value
+        XCTAssertTrue(timedOut)
+    }
+
     func testTunnelProfileBuildsProviderConfigurationPayload() throws {
         let endpoint = URL(string: "https://relay.example:9443")!
         let profile = AuroraTunnelProfile(
