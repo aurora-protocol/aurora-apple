@@ -30,6 +30,8 @@ enum AuroraCore {
         case ingressLocalPacket = 18
         case nextLocalPacket = 15
         case reserveNativeProvisioning = 19
+        case validateNativeProvisioningSource = 20
+        case configureNativeProvisioningTrust = 21
     }
 
     private enum Status: UInt8 {
@@ -226,6 +228,26 @@ enum AuroraCore {
         return okPayload(call(.nextLocalPacket, arg: handle))
     }
 
+    static func validateNativeProvisioningSource(
+        _ source: Data,
+        now: Date = Date()
+    ) -> Bool {
+        let seconds = now.timeIntervalSince1970
+        guard source.count > 0,
+              source.count <= AuroraNativeProvisioningStore.maximumBytes,
+              seconds.isFinite,
+              seconds >= 1,
+              seconds <= Double(Int64.max)
+        else {
+            return false
+        }
+        return okPayload(call(
+            .validateNativeProvisioningSource,
+            input: source,
+            arg: UInt64(seconds)
+        )) != nil
+    }
+
     static func reserveNativeProvisioning(
         source: Data,
         spentHintKeys: [Data],
@@ -260,6 +282,13 @@ enum AuroraCore {
             return nil
         }
         return decodeNativeProvisioningReservation(payload, nowUnix: UInt64(seconds))
+    }
+
+    static func configureNativeProvisioningTrust(_ roots: Data) -> Bool {
+        guard !roots.isEmpty, roots.count <= 64 << 10 else {
+            return false
+        }
+        return okPayload(call(.configureNativeProvisioningTrust, input: roots)) != nil
     }
 
     // MARK: - ABI plumbing

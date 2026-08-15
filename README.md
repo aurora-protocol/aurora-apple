@@ -32,6 +32,23 @@ AURORA_CORE_DIR=/path/to/aurora-core scripts/build-auroracore-xcframework.sh
 It produces macOS (arm64+x86_64), iOS device (arm64), and iOS simulator
 (arm64+x86_64) slices. Requires the Go toolchain and Xcode.
 
+## Signed-seed roots
+
+Native provisioning verifies signed seeds against roots supplied separately from
+the provisioning bundle. Release builds require a canonical root bundle from
+the release environment and stage it as a code-signed `AuroraKit` resource:
+
+```sh
+AURORA_SIGNED_SEED_ROOTS_FILE=/secure/path/AuroraSignedSeedRoots.bin \
+  scripts/build-auroracore-xcframework.sh
+```
+
+The staging step rejects missing, oversized, malformed, and non-canonical
+inputs. It deletes any previously staged resource before reporting a failure.
+The root bundle is intentionally ignored by Git and must be supplied for every
+release archive. Debug builds use an empty placeholder, which native
+provisioning rejects.
+
 ## Local checks
 
 ```sh

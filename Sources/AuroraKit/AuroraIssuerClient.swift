@@ -134,19 +134,7 @@ public extension URLSessionAuroraServerClient {
     }
 
     private func carrierExchange(endpoint: URL, body: Data) async throws -> Data {
-        let url = endpoint
-            .appendingPathComponent("assets")
-            .appendingPathComponent("app.bin")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw AuroraClientError.unavailable
-        }
-        return data
+        try await carrierResponse(endpoint: endpoint, body: body)
     }
 }
 

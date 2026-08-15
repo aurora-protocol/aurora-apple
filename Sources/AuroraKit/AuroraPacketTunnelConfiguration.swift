@@ -29,6 +29,7 @@ public struct AuroraIPv6Route: Equatable, Sendable {
 
 public enum AuroraPacketTunnelConfigurationError: Error, Equatable, Sendable {
     case unresolvedTunnelEndpoint
+    case endpointResolutionTimedOut
     case invalidNetworkSettings
 }
 
@@ -200,7 +201,29 @@ public struct AuroraPacketTunnelConfiguration: Equatable, Sendable {
 }
 
 public final class AuroraTunnelEndpointResolver: @unchecked Sendable {
-    public init() {}
+    private static let defaultResolutionTimeoutNanoseconds: UInt64 = 5_000_000_000
+
+    private let lookup: @Sendable (String) throws -> [String]
+    private let resolutionTimeoutNanoseconds: UInt64
+
+    public init() {
+        self.lookup = Self.lookupNumericAddresses
+        self.resolutionTimeoutNanoseconds = Self.defaultResolutionTimeoutNanoseconds
+    }
+
+    init(lookup: @escaping @Sendable (String) throws -> [String]) {
+        self.lookup = lookup
+        self.resolutionTimeoutNanoseconds = Self.defaultResolutionTimeoutNanoseconds
+    }
+
+    init(
+        resolutionTimeoutNanoseconds: UInt64,
+        lookup: @escaping @Sendable (String) throws -> [String]
+    ) {
+        precondition(resolutionTimeoutNanoseconds > 0)
+        self.lookup = lookup
+        self.resolutionTimeoutNanoseconds = resolutionTimeoutNanoseconds
+    }
 
     public func resolve(_ configuration: AuroraPacketTunnelConfiguration) async throws -> AuroraPacketTunnelConfiguration {
         try Task.checkCancellation()
@@ -208,9 +231,32 @@ public final class AuroraTunnelEndpointResolver: @unchecked Sendable {
             return try configuration.applyingResolvedRemoteAddresses([address])
         }
         let host = configuration.tunnelRemoteAddress
-        let addresses = try await Task.detached(priority: .userInitiated) {
-            try Self.lookupNumericAddresses(host)
-        }.value
+        let resolution = AuroraTunnelEndpointResolution()
+        let timeout = Task.detached(priority: .userInitiated) { [resolution, resolutionTimeoutNanoseconds] in
+            do {
+                try await Task.sleep(nanoseconds: resolutionTimeoutNanoseconds)
+            } catch {
+                return
+            }
+            resolution.complete(.failure(AuroraPacketTunnelConfigurationError.endpointResolutionTimedOut))
+        }
+        defer { timeout.cancel() }
+        let addresses = try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                guard resolution.install(continuation) else {
+                    return
+                }
+                Task.detached(priority: .userInitiated) { [lookup, resolution] in
+                    do {
+                        resolution.complete(.success(try lookup(host)))
+                    } catch {
+                        resolution.complete(.failure(error))
+                    }
+                }
+            }
+        }, onCancel: {
+            resolution.complete(.failure(CancellationError()))
+        })
         try Task.checkCancellation()
         return try configuration.applyingResolvedRemoteAddresses(addresses)
     }
@@ -275,5 +321,38 @@ public final class AuroraTunnelEndpointResolver: @unchecked Sendable {
             }
             return String(cString: value)
         }
+    }
+}
+
+private final class AuroraTunnelEndpointResolution: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<[String], any Error>?
+    private var continuation: CheckedContinuation<[String], any Error>?
+
+    func install(_ continuation: CheckedContinuation<[String], any Error>) -> Bool {
+        let result: Result<[String], any Error>? = lock.withLock {
+            guard let result = self.result else {
+                self.continuation = continuation
+                return nil
+            }
+            return result
+        }
+        guard let result else {
+            return true
+        }
+        continuation.resume(with: result)
+        return false
+    }
+
+    func complete(_ result: Result<[String], any Error>) {
+        let continuation: CheckedContinuation<[String], any Error>? = lock.withLock {
+            guard self.result == nil else {
+                return nil
+            }
+            self.result = result
+            defer { self.continuation = nil }
+            return self.continuation
+        }
+        continuation?.resume(with: result)
     }
 }
