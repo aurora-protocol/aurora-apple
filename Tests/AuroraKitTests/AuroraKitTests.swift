@@ -2226,6 +2226,51 @@ final class AuroraKitTests: XCTestCase {
         )))
     }
 
+    /// The packet path calls validate in place of encoding a batch it discards,
+    /// so validate has to enforce every rule itself. Each case states its own
+    /// expected outcome rather than comparing against encode, which now
+    /// delegates to validate and so cannot disagree with it.
+    func testPacketBatchCodecValidateEnforcesBatchRules() throws {
+        let ipv4 = Data([0x45, 0x00, 0x00, 0x14])
+        let ipv6 = Data([0x60, 0x00, 0x00, 0x00])
+        let cases: [(name: String, batch: AuroraPacketFlowBatch, valid: Bool)] = [
+            ("empty", AuroraPacketFlowBatch(packets: [], protocolNumbers: []), true),
+            ("ipv4", AuroraPacketFlowBatch(packets: [ipv4], protocolNumbers: [2]), true),
+            ("mixed", AuroraPacketFlowBatch(packets: [ipv4, ipv6], protocolNumbers: [2, 30]), true),
+            ("at maximum", AuroraPacketFlowBatch(
+                packets: Array(repeating: ipv4, count: 64),
+                protocolNumbers: Array(repeating: 2, count: 64)
+            ), true),
+            ("count mismatch", AuroraPacketFlowBatch(packets: [ipv4], protocolNumbers: [2, 30]), false),
+            ("family mismatch", AuroraPacketFlowBatch(packets: [ipv4], protocolNumbers: [30]), false),
+            ("not ip", AuroraPacketFlowBatch(
+                packets: [Data([0x05, 0x00, 0x00, 0x14])],
+                protocolNumbers: [0]
+            ), false),
+            ("empty packet", AuroraPacketFlowBatch(packets: [Data()], protocolNumbers: [2]), false),
+            ("above maximum", AuroraPacketFlowBatch(
+                packets: Array(repeating: ipv4, count: 65),
+                protocolNumbers: Array(repeating: 2, count: 65)
+            ), false),
+        ]
+
+        for testCase in cases {
+            let accepted = (try? AuroraPacketBatchCodec.validate(testCase.batch)) != nil
+            XCTAssertEqual(accepted, testCase.valid, "validate accepted=\(accepted) for \(testCase.name)")
+        }
+    }
+
+    func testPacketBatchCodecEncodeStillProducesTheSameBytes() throws {
+        let batch = AuroraPacketFlowBatch(
+            packets: [Data([0x45, 0x00, 0x00, 0x14]), Data([0x60, 0x00, 0x00, 0x00])],
+            protocolNumbers: [2, 30]
+        )
+        let encoded = try AuroraPacketBatchCodec.encode(batch)
+        XCTAssertEqual(try AuroraPacketBatchCodec.decode(encoded), batch)
+        let hex = encoded.map { String(format: "%02x", $0) }.joined()
+        XCTAssertEqual(hex, "000200020000000445000014001e0000000460000000")
+    }
+
     func testServerBackedPacketTunnelCoreExchangesPacketBatchWithServer() async throws {
         let statusClient = MockServerClient(status: AuroraServerStatus(ready: true, issuer: true, cover: true))
         let packetClient = MockPacketExchangeClient(outboundBatch: AuroraPacketFlowBatch(
