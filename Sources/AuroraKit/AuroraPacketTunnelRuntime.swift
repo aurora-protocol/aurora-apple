@@ -193,7 +193,12 @@ public struct AuroraSocketEvent: Equatable, Sendable {
 
 public protocol AuroraPacketFlow: Sendable {
     func readPacketBatch() async -> AuroraPacketFlowBatch?
+    func releasePendingRead() async
     func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool
+}
+
+public extension AuroraPacketFlow {
+    func releasePendingRead() async {}
 }
 
 public protocol AuroraPacketTunnelCore: Sendable {
@@ -412,6 +417,7 @@ public actor AuroraPacketTunnelRuntime {
     }
 
     public func stop() async {
+        let wasRunning = running
         acceptsStart = false
         running = false
         trafficSuspended = true
@@ -419,6 +425,9 @@ public actor AuroraPacketTunnelRuntime {
         resumeTrafficWaiters()
         outputTask?.cancel()
         outputTask = nil
+        if wasRunning {
+            await packetFlow.releasePendingRead()
+        }
         await packetFlowWriteGate.close()
         await closeCore()
         await waitForPendingStart()
@@ -550,6 +559,7 @@ public actor AuroraPacketTunnelRuntime {
         resumeTrafficWaiters()
         outputTask?.cancel()
         outputTask = nil
+        await packetFlow.releasePendingRead()
         await packetFlowWriteGate.close()
         await closeCore()
         onTerminalFailure(failure)

@@ -2178,6 +2178,40 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(closed)
     }
 
+    func testPacketTunnelRuntimeStopReleasesPendingPacketRead() async throws {
+        let packetFlow = MockBlockingPacketFlow()
+        let core = MockPacketTunnelCore()
+        let runtime = AuroraPacketTunnelRuntime(
+            configuration: AuroraConfiguration(endpoint: URL(string: "https://relay.example:9443")!),
+            packetFlow: packetFlow,
+            core: core
+        )
+        try await runtime.start()
+        let terminationResult = MockAsyncResult<AuroraPacketTunnelRuntimeTermination>()
+        Task {
+            await terminationResult.record(await runtime.runUntilStopped())
+        }
+
+        for _ in 0..<20 {
+            if await packetFlow.hasPendingRead {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let hasPendingRead = await packetFlow.hasPendingRead
+        XCTAssertTrue(hasPendingRead)
+
+        await runtime.stop()
+
+        guard let termination = await terminationResult.wait(timeoutNanoseconds: 1_000_000_000) else {
+            await packetFlow.finish()
+            return XCTFail("stopping the runtime left the packet read pending")
+        }
+        let pendingReadReleaseCount = await packetFlow.pendingReadReleaseCount
+        XCTAssertEqual(termination, .stopped)
+        XCTAssertEqual(pendingReadReleaseCount, 1)
+    }
+
     func testPacketTunnelLifecycleRejectsStartupSuccessAfterStop() {
         let lifecycle = AuroraPacketTunnelLifecycle()
         let generation = lifecycle.beginStartup()
@@ -3875,6 +3909,7 @@ private actor MockBlockingPacketFlow: AuroraPacketFlow {
     private var continuation: CheckedContinuation<AuroraPacketFlowBatch?, Never>?
     private let writeResult: Bool
     private(set) var writtenBatches: [AuroraPacketFlowBatch] = []
+    private(set) var pendingReadReleaseCount = 0
 
     init(writeResult: Bool = true) {
         self.writeResult = writeResult
@@ -3889,6 +3924,14 @@ private actor MockBlockingPacketFlow: AuroraPacketFlow {
     func writePacketBatch(_ batch: AuroraPacketFlowBatch) async -> Bool {
         writtenBatches.append(batch)
         return writeResult
+    }
+
+    func releasePendingRead() async {
+        guard continuation != nil else {
+            return
+        }
+        pendingReadReleaseCount += 1
+        resume(nil)
     }
 
     func finish() {
@@ -4048,6 +4091,35 @@ private final class AsyncOperationCounter: @unchecked Sendable {
         lock.lock()
         count += 1
         lock.unlock()
+    }
+}
+
+private actor MockAsyncResult<Value: Sendable> {
+    private var value: Value?
+    private var waiter: CheckedContinuation<Value?, Never>?
+
+    func record(_ value: Value) {
+        self.value = value
+        waiter?.resume(returning: value)
+        waiter = nil
+    }
+
+    func wait(timeoutNanoseconds: UInt64) async -> Value? {
+        if let value {
+            return value
+        }
+        return await withCheckedContinuation { continuation in
+            waiter = continuation
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                await self?.expireWaiter()
+            }
+        }
+    }
+
+    private func expireWaiter() {
+        waiter?.resume(returning: nil)
+        waiter = nil
     }
 }
 
