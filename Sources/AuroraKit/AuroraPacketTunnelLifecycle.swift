@@ -118,7 +118,10 @@ public actor AuroraNetworkPathTransitionTracker {
 }
 
 public actor AuroraAsyncSerialQueue {
-    private var pendingOperations: [@Sendable () async -> Void] = []
+    private typealias Operation = @Sendable () async -> Void
+
+    private var pendingOperations: [Operation?] = []
+    private var nextOperationIndex = 0
     private var isDraining = false
     private var quiescenceWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -136,7 +139,7 @@ public actor AuroraAsyncSerialQueue {
     }
 
     public func waitForQuiescence() async {
-        guard isDraining || !pendingOperations.isEmpty else {
+        guard isDraining || nextOperationIndex < pendingOperations.count else {
             return
         }
         await withCheckedContinuation { continuation in
@@ -145,11 +148,18 @@ public actor AuroraAsyncSerialQueue {
     }
 
     private func drain() async {
-        while !pendingOperations.isEmpty {
-            let operation = pendingOperations.removeFirst()
+        while nextOperationIndex < pendingOperations.count {
+            guard let operation = pendingOperations[nextOperationIndex] else {
+                nextOperationIndex += 1
+                continue
+            }
+            pendingOperations[nextOperationIndex] = nil
+            nextOperationIndex += 1
             await operation()
         }
         isDraining = false
+        nextOperationIndex = 0
+        pendingOperations.removeAll(keepingCapacity: false)
         let waiters = quiescenceWaiters
         quiescenceWaiters.removeAll()
         for waiter in waiters {
