@@ -24,6 +24,9 @@ let package = Package(
         .target(
             name: "AuroraKit",
             dependencies: ["AuroraCoreFFI"],
+            resources: [
+                .process("Resources"),
+            ],
             linkerSettings: [
                 .linkedLibrary("resolv"),
                 .linkedFramework("Security"),

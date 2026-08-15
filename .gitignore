@@ -1,4 +1,5 @@
 .build/
+build/
 DerivedData/
 /.worktrees/
 *.xcworkspace/xcuserdata/
@@ -8,3 +9,4 @@ DerivedData/
 .DS_Store
 Vendor/AuroraCore.xcframework/
 Vendor/.auroracore-build/
+Sources/AuroraKit/Resources/AuroraSignedSeedRoots.bin

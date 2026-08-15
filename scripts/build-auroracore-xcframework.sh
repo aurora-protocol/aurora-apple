@@ -26,6 +26,8 @@ if [ ! -d "$AURORA_CORE_DIR/mobile/auroracore" ]; then
   exit 1
 fi
 
+scripts/prepare-signed-seed-roots.sh
+
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
