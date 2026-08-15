@@ -1035,6 +1035,144 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertEqual(reservedSpentHintKeys, [[], [first.spentHintKey]])
     }
 
+    func testNativePacketTunnelCoreRejectsConcurrentConnectBeforeSecondCoreSession() async throws {
+        let credentialStore = MockSecureCredentialStore()
+        let first = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xc1, count: 64),
+            spentHintKey: Data(repeating: 0x41, count: 48),
+            relayBucketID: Data(repeating: 0x51, count: 16),
+            accessHintExpiryUnix: UInt64(Date().addingTimeInterval(3_600).timeIntervalSince1970)
+        )
+        let second = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xc2, count: 64),
+            spentHintKey: Data(repeating: 0x42, count: 48),
+            relayBucketID: Data(repeating: 0x51, count: 16),
+            accessHintExpiryUnix: UInt64(Date().addingTimeInterval(3_600).timeIntervalSince1970)
+        )
+        let store = AuroraNativeProvisioningStore(
+            credentialStore: credentialStore,
+            reserver: MockNativeProvisioningReserver(reservations: [first, second])
+        )
+        try await store.save(Data(repeating: 0xcc, count: 128), identifier: "concurrent-slot")
+        let driver = BlockingNativeSessionDriver(works: [
+            AuroraNativeIssuerWork(
+                handle: 61,
+                issuerURL: URL(string: "https://issuer.example")!,
+                issuerCarrierPath: "/assets/issue/61",
+                requestBody: Data([0x01])
+            ),
+            AuroraNativeIssuerWork(
+                handle: 62,
+                issuerURL: URL(string: "https://issuer.example")!,
+                issuerCarrierPath: "/assets/issue/62",
+                requestBody: Data([0x02])
+            ),
+        ])
+        let core = AuroraNativePacketTunnelCore(
+            provisioningStore: store,
+            sessionDriver: driver,
+            issuerTransport: MockNativeIssuerTransport(response: Data([0xaa]))
+        )
+        let configuration = AuroraConfiguration(
+            endpoint: URL(string: "https://relay.example:9443")!,
+            nativeProvisioningIdentifier: "concurrent-slot"
+        )
+
+        let firstConnect = Task { try await core.connect(configuration: configuration) }
+        for _ in 0..<20 {
+            if await driver.hasPendingFirstBegin {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let hasPendingFirstBegin = await driver.hasPendingFirstBegin
+        XCTAssertTrue(hasPendingFirstBegin)
+
+        let secondResult = await Task { () -> Result<Void, any Error> in
+            do {
+                try await core.connect(configuration: configuration)
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }.value
+
+        await driver.resumeFirstBegin()
+        try await firstConnect.value
+        await core.close()
+
+        switch secondResult {
+        case .success:
+            XCTFail("concurrent native tunnel connection unexpectedly succeeded")
+        case let .failure(error):
+            XCTAssertEqual(error as? AuroraNativeTunnelError, .invalidProvisioning)
+        }
+        let beginCount = await driver.beginCount
+        let completedHandles = await driver.completedHandles
+        let closedHandles = await driver.closedHandles
+        XCTAssertEqual(beginCount, 1)
+        XCTAssertEqual(completedHandles, [61])
+        XCTAssertEqual(closedHandles, [61])
+    }
+
+    func testNativePacketTunnelCoreCleansDelayedCoreHandleAfterConnectCancellation() async throws {
+        let credentialStore = MockSecureCredentialStore()
+        let reservation = AuroraNativeProvisioningReservation(
+            provisioning: Data(repeating: 0xd1, count: 64),
+            spentHintKey: Data(repeating: 0x43, count: 48),
+            relayBucketID: Data(repeating: 0x53, count: 16),
+            accessHintExpiryUnix: UInt64(Date().addingTimeInterval(3_600).timeIntervalSince1970)
+        )
+        let store = AuroraNativeProvisioningStore(
+            credentialStore: credentialStore,
+            reserver: MockNativeProvisioningReserver(reservations: [reservation])
+        )
+        try await store.save(Data(repeating: 0xdd, count: 128), identifier: "cancelled-slot")
+        let driver = BlockingNativeSessionDriver(works: [
+            AuroraNativeIssuerWork(
+                handle: 71,
+                issuerURL: URL(string: "https://issuer.example")!,
+                issuerCarrierPath: "/assets/issue/71",
+                requestBody: Data([0x03])
+            ),
+        ])
+        let core = AuroraNativePacketTunnelCore(
+            provisioningStore: store,
+            sessionDriver: driver,
+            issuerTransport: MockNativeIssuerTransport(response: Data([0xbb]))
+        )
+        let configuration = AuroraConfiguration(
+            endpoint: URL(string: "https://relay.example:9443")!,
+            nativeProvisioningIdentifier: "cancelled-slot"
+        )
+
+        let connect = Task { try await core.connect(configuration: configuration) }
+        for _ in 0..<20 {
+            if await driver.hasPendingFirstBegin {
+                break
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let hasPendingFirstBegin = await driver.hasPendingFirstBegin
+        XCTAssertTrue(hasPendingFirstBegin)
+
+        connect.cancel()
+        await driver.resumeFirstBegin()
+        let result = await connect.result
+        await core.close()
+
+        switch result {
+        case .success:
+            XCTFail("cancelled native tunnel connection unexpectedly succeeded")
+        case let .failure(error):
+            XCTAssertTrue(error is CancellationError)
+        }
+        let completedHandles = await driver.completedHandles
+        let closedHandles = await driver.closedHandles
+        XCTAssertTrue(completedHandles.isEmpty)
+        XCTAssertEqual(closedHandles, [71])
+    }
+
     func testNativeIssuerRedirectDelegateRejectsRedirects() {
         let sourceURL = URL(string: "https://issuer.example/assets/issue/41")!
         let redirectedURL = URL(string: "https://redirect.example/assets/issue/41")!
@@ -3311,6 +3449,57 @@ private actor MockNativeSessionDriver: AuroraNativeSessionDriver {
 
     func close(handle: UInt64) async {
         closedHandles.append(handle)
+    }
+}
+
+private actor BlockingNativeSessionDriver: AuroraNativeSessionDriver {
+    private let works: [AuroraNativeIssuerWork]
+    private var firstBeginContinuation: CheckedContinuation<Void, Never>?
+    private(set) var beginCount = 0
+    private(set) var completedHandles: [UInt64] = []
+    private(set) var closedHandles: [UInt64] = []
+
+    init(works: [AuroraNativeIssuerWork]) {
+        self.works = works
+    }
+
+    var hasPendingFirstBegin: Bool {
+        firstBeginContinuation != nil
+    }
+
+    func begin(provisioning: Data) async throws -> AuroraNativeIssuerWork {
+        let index = beginCount
+        beginCount += 1
+        guard works.indices.contains(index) else {
+            throw AuroraNativeTunnelError.coreOperationFailed
+        }
+        if index == 0 {
+            await withCheckedContinuation { continuation in
+                firstBeginContinuation = continuation
+            }
+        }
+        return works[index]
+    }
+
+    func complete(handle: UInt64, issuerResponse: Data) async throws {
+        completedHandles.append(handle)
+    }
+
+    func ingress(handle: UInt64, packet: Data) async throws -> [Data] {
+        throw AuroraNativeTunnelError.coreOperationFailed
+    }
+
+    func nextLocalPacket(handle: UInt64) async throws -> Data {
+        throw AuroraNativeTunnelError.coreOperationFailed
+    }
+
+    func close(handle: UInt64) async {
+        closedHandles.append(handle)
+    }
+
+    func resumeFirstBegin() {
+        firstBeginContinuation?.resume()
+        firstBeginContinuation = nil
     }
 }
 
