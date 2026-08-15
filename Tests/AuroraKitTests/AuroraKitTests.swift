@@ -2622,7 +2622,7 @@ final class AuroraKitTests: XCTestCase {
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
         XCTAssertTrue(
-            workflow.contains("ref: 0548c6dea94d7d8a44e40fd92b188a60c0d25be1"),
+            workflow.contains("ref: 30e91e8a8555c970f5211f47bf03ddb66c6a3fdc"),
             "CI should pin the reviewed Core ABI revision"
         )
         XCTAssertTrue(readme.contains("scripts/aurora-apple-check.sh"), "README should document the shared Apple readiness script")
