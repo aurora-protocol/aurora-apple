@@ -392,6 +392,7 @@ public struct URLSessionAuroraNativeIssuerTransport: AuroraNativeIssuerTransport
         let (responseBytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse,
               http.statusCode == 200,
+              Self.isBinaryContentType(http.value(forHTTPHeaderField: "Content-Type")),
               http.expectedContentLength <= Int64(Self.maximumResponseBytes)
         else {
             throw AuroraNativeTunnelError.unavailable
@@ -411,6 +412,15 @@ public struct URLSessionAuroraNativeIssuerTransport: AuroraNativeIssuerTransport
         }
         return responseBody
     }
+
+    private static func isBinaryContentType(_ value: String?) -> Bool {
+        guard let value else {
+            return false
+        }
+        let mediaType = value.split(separator: ";", maxSplits: 1)[0]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return mediaType.caseInsensitiveCompare("application/octet-stream") == .orderedSame
+    }
 }
 
 public protocol AuroraPacketTunnelOutputCore: AuroraPacketTunnelCore {
@@ -418,10 +428,19 @@ public protocol AuroraPacketTunnelOutputCore: AuroraPacketTunnelCore {
 }
 
 public actor AuroraNativePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketTunnelOutputCore, AuroraPacketTunnelRecoverableCore {
+    private struct ConnectionAttempt {
+        var identifier: UInt64
+        var pendingHandle: UInt64?
+        var cancelled = false
+        var closeClaimed = false
+    }
+
     private let provisioningStore: AuroraNativeProvisioningStore
     private let sessionDriver: any AuroraNativeSessionDriver
     private let issuerTransport: any AuroraNativeIssuerTransport
     private var handle: UInt64?
+    private var nextConnectionAttempt: UInt64 = 0
+    private var connectionAttempt: ConnectionAttempt?
 
     public init(
         provisioningStore: AuroraNativeProvisioningStore = AuroraNativeProvisioningStore(),
@@ -435,22 +454,48 @@ public actor AuroraNativePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketT
 
     public func connect(configuration: AuroraConfiguration) async throws {
         guard handle == nil,
+              connectionAttempt == nil,
               let identifier = configuration.nativeProvisioningIdentifier
         else {
             throw AuroraNativeTunnelError.invalidProvisioning
         }
+        nextConnectionAttempt &+= 1
+        let attemptIdentifier = nextConnectionAttempt
+        connectionAttempt = ConnectionAttempt(identifier: attemptIdentifier)
+        defer { clearConnectionAttempt(attemptIdentifier) }
+        try Task.checkCancellation()
         var reservation = try await provisioningStore.reserve(identifier: identifier)
         defer { reservation.zero() }
-        let work = try await sessionDriver.begin(provisioning: reservation.provisioning)
+        try Task.checkCancellation()
+        var work: AuroraNativeIssuerWork?
         do {
-            let response = try await issuerTransport.postIssuerWork(
-                url: try issuerURL(for: work),
-                body: work.requestBody
+            let startedWork = try await sessionDriver.begin(provisioning: reservation.provisioning)
+            work = startedWork
+            try Task.checkCancellation()
+            guard registerPendingHandle(startedWork.handle, for: attemptIdentifier) else {
+                if let handle = claimPendingHandleClose(startedWork.handle, for: attemptIdentifier) {
+                    await sessionDriver.close(handle: handle)
+                }
+                throw CancellationError()
+            }
+            var response = try await issuerTransport.postIssuerWork(
+                url: try issuerURL(for: startedWork),
+                body: startedWork.requestBody
             )
-            try await sessionDriver.complete(handle: work.handle, issuerResponse: response)
-            handle = work.handle
+            defer { response.resetBytes(in: 0..<response.count) }
+            try Task.checkCancellation()
+            try await sessionDriver.complete(handle: startedWork.handle, issuerResponse: response)
+            try Task.checkCancellation()
+            guard establish(startedWork.handle, for: attemptIdentifier) else {
+                if let handle = claimPendingHandleClose(startedWork.handle, for: attemptIdentifier) {
+                    await sessionDriver.close(handle: handle)
+                }
+                throw CancellationError()
+            }
         } catch {
-            await sessionDriver.close(handle: work.handle)
+            if let work, let handle = claimPendingHandleClose(work.handle, for: attemptIdentifier) {
+                await sessionDriver.close(handle: handle)
+            }
             throw error
         }
     }
@@ -485,11 +530,83 @@ public actor AuroraNativePacketTunnelCore: AuroraPacketTunnelCore, AuroraPacketT
     public func notifyNetworkPathChange(_ change: AuroraNetworkPathChange) async {}
 
     public func close() async {
-        guard let handle else {
+        let pendingHandle = cancelConnectionAttempt()
+        let establishedHandle = handle
+        handle = nil
+        if let pendingHandle {
+            await sessionDriver.close(handle: pendingHandle)
+        }
+        if let establishedHandle {
+            await sessionDriver.close(handle: establishedHandle)
+        }
+    }
+
+    private func registerPendingHandle(_ handle: UInt64, for attemptIdentifier: UInt64) -> Bool {
+        guard var attempt = connectionAttempt,
+              attempt.identifier == attemptIdentifier,
+              !attempt.cancelled,
+              !attempt.closeClaimed,
+              attempt.pendingHandle == nil,
+              self.handle == nil
+        else {
+            return false
+        }
+        attempt.pendingHandle = handle
+        connectionAttempt = attempt
+        return true
+    }
+
+    private func establish(_ handle: UInt64, for attemptIdentifier: UInt64) -> Bool {
+        guard let attempt = connectionAttempt,
+              attempt.identifier == attemptIdentifier,
+              !attempt.cancelled,
+              !attempt.closeClaimed,
+              attempt.pendingHandle == handle,
+              self.handle == nil
+        else {
+            return false
+        }
+        connectionAttempt = nil
+        self.handle = handle
+        return true
+    }
+
+    private func cancelConnectionAttempt() -> UInt64? {
+        guard var attempt = connectionAttempt else {
+            return nil
+        }
+        attempt.cancelled = true
+        guard let handle = attempt.pendingHandle, !attempt.closeClaimed else {
+            connectionAttempt = attempt
+            return nil
+        }
+        attempt.pendingHandle = nil
+        attempt.closeClaimed = true
+        connectionAttempt = attempt
+        return handle
+    }
+
+    private func claimPendingHandleClose(_ handle: UInt64, for attemptIdentifier: UInt64) -> UInt64? {
+        guard var attempt = connectionAttempt,
+              attempt.identifier == attemptIdentifier,
+              !attempt.closeClaimed
+        else {
+            return nil
+        }
+        guard attempt.pendingHandle == nil || attempt.pendingHandle == handle else {
+            return nil
+        }
+        attempt.pendingHandle = nil
+        attempt.closeClaimed = true
+        connectionAttempt = attempt
+        return handle
+    }
+
+    private func clearConnectionAttempt(_ attemptIdentifier: UInt64) {
+        guard connectionAttempt?.identifier == attemptIdentifier else {
             return
         }
-        self.handle = nil
-        await sessionDriver.close(handle: handle)
+        connectionAttempt = nil
     }
 
     private func establishedHandle() throws -> UInt64 {

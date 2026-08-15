@@ -12,6 +12,10 @@ enum AuroraCore {
     /// verified CoverTemplate/RelayDescriptor; the prototype pins the default.
     static let carrierPath = "/assets/app.bin"
 
+    private static let maximumCallInputBytes =
+        AuroraNativeProvisioningStore.maximumBytes + 4 + 1 + AuroraNativeProvisioningStore.maximumReservations * 48
+    private static let maximumCallOutputBytes = maximumCallInputBytes * 2 + 1_024
+
     private enum Op: Int32 {
         case encodeMetadataRequest = 1
         case encodeIssueRequest = 2
@@ -296,6 +300,7 @@ enum AuroraCore {
 
 
     private static func call(_ op: Op, input: Data = Data(), arg: UInt64 = 0) -> Result? {
+        guard input.count <= maximumCallInputBytes else { return nil }
         var outLen: Int32 = 0
         let raw: UnsafeMutablePointer<UInt8>?
         if input.isEmpty {
@@ -307,8 +312,11 @@ enum AuroraCore {
             }
         }
         guard let ptr = raw else { return nil }
-        defer { AuroraCoreFree(ptr) }
-        guard outLen >= 1, let status = Status(rawValue: ptr[0]) else { return nil }
+        defer { AuroraCoreZeroFree(ptr, outLen) }
+        guard outLen >= 1,
+              Int(outLen) <= maximumCallOutputBytes,
+              let status = Status(rawValue: ptr[0])
+        else { return nil }
         let payload = outLen > 1 ? Data(bytes: ptr + 1, count: Int(outLen) - 1) : Data()
         return Result(status: status, payload: payload)
     }
