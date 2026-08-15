@@ -20,8 +20,9 @@ responsibilities and MUST NOT be reimplemented in the platform adapter.
 Go `aurora-core` repository, and delegates all byte-level protocol work to it;
 the Swift layer performs only network and packet I/O.
 
-`AuroraCore.xcframework` is a build artifact (gitignored). Build it from a
-sibling `aurora-core` checkout before building the package or apps:
+`AuroraCore.xcframework` is a build artifact (gitignored). Build it from the
+exact `aurora-core` revision pinned by the build script before building the
+package or apps:
 
 ```sh
 scripts/build-auroracore-xcframework.sh        # uses ../aurora-core by default

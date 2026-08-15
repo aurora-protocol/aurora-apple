@@ -12,6 +12,7 @@ set -eu
 cd "$(dirname "$0")/.."
 APPLE_DIR="$PWD"
 AURORA_CORE_DIR="${AURORA_CORE_DIR:-$APPLE_DIR/../aurora-core}"
+EXPECTED_CORE_REVISION="50834f0a9e41373584454f1fc3ec9cd0ce6faaf3"
 OUT_DIR="${OUT_DIR:-$APPLE_DIR/Vendor}"
 BUILD_DIR="$OUT_DIR/.auroracore-build"
 PKG="./mobile/auroracore"
@@ -23,6 +24,10 @@ export GOCACHE="${GOCACHE:-/private/tmp/aurora-gocache}"
 if [ ! -d "$AURORA_CORE_DIR/mobile/auroracore" ]; then
   echo "error: aurora-core binding not found at $AURORA_CORE_DIR/mobile/auroracore" >&2
   echo "set AURORA_CORE_DIR to the aurora-core checkout" >&2
+  exit 1
+fi
+if [ "$(git -C "$AURORA_CORE_DIR" rev-parse HEAD)" != "$EXPECTED_CORE_REVISION" ]; then
+  echo "error: aurora-core revision does not match the Apple ABI pin" >&2
   exit 1
 fi
 

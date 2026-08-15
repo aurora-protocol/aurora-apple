@@ -2729,6 +2729,10 @@ final class AuroraKitTests: XCTestCase {
     func testAppleReadinessScriptCoversPackageAndPlatformBuilds() throws {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         let scriptURL = root.appendingPathComponent("scripts/aurora-apple-check.sh")
+        let coreBuildScript = try String(
+            contentsOf: root.appendingPathComponent("scripts/build-auroracore-xcframework.sh"),
+            encoding: .utf8
+        )
         let workflow = try String(contentsOf: root.appendingPathComponent(".github/workflows/ci.yml"), encoding: .utf8)
         let readme = try String(contentsOf: root.appendingPathComponent("README.md"), encoding: .utf8)
         let script: String
@@ -2759,9 +2763,14 @@ final class AuroraKitTests: XCTestCase {
         )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
+        let coreRevision = "50834f0a9e41373584454f1fc3ec9cd0ce6faaf3"
         XCTAssertTrue(
-            workflow.contains("ref: a9e4ab8d744db1739de3bb2ef7058d9f2e4bf4c1"),
+            workflow.contains("ref: \(coreRevision)"),
             "CI should pin the reviewed Core ABI revision"
+        )
+        XCTAssertTrue(
+            coreBuildScript.contains("EXPECTED_CORE_REVISION=\"\(coreRevision)\""),
+            "local builds should use the same reviewed Core ABI revision as CI"
         )
         XCTAssertTrue(readme.contains("scripts/aurora-apple-check.sh"), "README should document the shared Apple readiness script")
         XCTAssertTrue(script.contains("swift test"), "Apple readiness script should run Swift package tests")
