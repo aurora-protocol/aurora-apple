@@ -31,7 +31,7 @@ if [ "$(git -C "$AURORA_CORE_DIR" rev-parse HEAD)" != "$EXPECTED_CORE_REVISION" 
   exit 1
 fi
 
-scripts/prepare-signed-seed-roots.sh
+scripts/prepare-native-trust-resource.sh
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00FCE6A86500EA152B557C2E /* AuroraSignedSeedTrust.bin in Resources */ = {isa = PBXBuildFile; fileRef = F3CCC9535C89B5058025C324 /* AuroraSignedSeedTrust.bin */; };
 		01A96E5CD03571373207D8AC /* AuroraMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81A23FDA7A008D4DC3DD736E /* AuroraMacApp.swift */; };
 		03B9A2970B4CDA89B66E5C4A /* AuroraNativeProvisioningTrust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E8427A75AA94B54BF7BD6E /* AuroraNativeProvisioningTrust.swift */; };
 		0C7688C3E47E71EA1B8C826D /* AuroraUI_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 50C04D738D8E44ACCFBD3944 /* AuroraUI_iOS.framework */; };
@@ -14,6 +15,7 @@
 		11AC7E8E14A2881226E2D86A /* AuroraUI_iOS.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 50C04D738D8E44ACCFBD3944 /* AuroraUI_iOS.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		12A5B53F26CBFAA4C7067EEA /* AuroraStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F36CC12D00ACADF86361E1 /* AuroraStatusView.swift */; };
 		1D476DAA0BB105B69879EED1 /* AuroraRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E1A6DDBD35EB3DEAB170B39 /* AuroraRedactor.swift */; };
+		20B6B0456E4C18BF2260F889 /* AuroraSignedSeedTrust.bin in Resources */ = {isa = PBXBuildFile; fileRef = F3CCC9535C89B5058025C324 /* AuroraSignedSeedTrust.bin */; };
 		22454227E5C44FC0DE29652F /* AuroraStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F36CC12D00ACADF86361E1 /* AuroraStatusView.swift */; };
 		3D2732712428594EA96C1619 /* AuroraPacketTunnelRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 771CB3DE75AB5028FB1A64FE /* AuroraPacketTunnelRuntime.swift */; };
 		3D9752B8B99538FF78FF7C12 /* AuroraCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2FA74ED98EF116E21C6922B3 /* AuroraCore.xcframework */; };
@@ -29,7 +31,6 @@
 		6342FD7E19ADB4AB19BC0706 /* AuroraPacketTunnelConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F63A911957B05A1ACEBD9A5 /* AuroraPacketTunnelConfiguration.swift */; };
 		65CE6DAD89B9A01064598C32 /* AuroraClientController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD1D9665FAF66EC4B5CD232 /* AuroraClientController.swift */; };
 		695B9C60FD953556B2F3E3B1 /* AuroraNativePacketTunnelCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F37EDDC12EC973CCFE74C6E /* AuroraNativePacketTunnelCore.swift */; };
-		6B0D56598984E471D6D029DF /* AuroraSignedSeedRoots.bin in Resources */ = {isa = PBXBuildFile; fileRef = B7582509B37F1F08D66BE65E /* AuroraSignedSeedRoots.bin */; };
 		70842AC34A51F0DF209455D8 /* AuroraPortableProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B688FFD2285608FACC39EEAF /* AuroraPortableProfileStore.swift */; };
 		7114818FF3AD3B97EE5BB8CB /* AuroraKit_macOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D0D733810C55062FF37301F /* AuroraKit_macOS.framework */; };
 		77A9C275212DE7D6F6DC6849 /* AuroraServerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A38A9D7DB7F6394F5DE8D3F /* AuroraServerClient.swift */; };
@@ -44,7 +45,6 @@
 		9A41C03602D738B630697DE6 /* AuroraCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2FA74ED98EF116E21C6922B3 /* AuroraCore.xcframework */; };
 		A88C0E98961F4690BE0A65A4 /* AuroraKit_macOS.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 9D0D733810C55062FF37301F /* AuroraKit_macOS.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B6B85CDDA1291747D680D9D9 /* AuroraIssuerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */; };
-		BAC3C37CAD1045169F814B6B /* AuroraSignedSeedRoots.bin in Resources */ = {isa = PBXBuildFile; fileRef = B7582509B37F1F08D66BE65E /* AuroraSignedSeedRoots.bin */; };
 		BBAFD654C92B664EC66813C4 /* AuroraIssuerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE817B534E2643F2A6790A8 /* AuroraIssuerClient.swift */; };
 		BDD39D98ABC94EE2CBEF7A92 /* AuroraCoreBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7544A77C23F5FB667C3CF91B /* AuroraCoreBridge.swift */; };
 		C5E59A21794A460372C7D8DD /* AuroraKit_iOS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B3495872A6BE2ECCA07379E /* AuroraKit_iOS.framework */; };
@@ -215,10 +215,10 @@
 		B181F29A5770BB1A4A64286E /* AuroraMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AuroraMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B4C571DE65AE541DF37702EB /* AuroraTokenWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraTokenWallet.swift; sourceTree = "<group>"; };
 		B688FFD2285608FACC39EEAF /* AuroraPortableProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraPortableProfileStore.swift; sourceTree = "<group>"; };
-		B7582509B37F1F08D66BE65E /* AuroraSignedSeedRoots.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = AuroraSignedSeedRoots.bin; sourceTree = "<group>"; };
 		C5CF9C6CFF3403E7C6E83905 /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
 		D7372C48806EACF6199E67BA /* AuroraIOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AuroraIOS.entitlements; sourceTree = "<group>"; };
 		EC0E1EB4E6547496142467EE /* AuroraTunnelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraTunnelManager.swift; sourceTree = "<group>"; };
+		F3CCC9535C89B5058025C324 /* AuroraSignedSeedTrust.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = AuroraSignedSeedTrust.bin; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -350,7 +350,7 @@
 			isa = PBXGroup;
 			children = (
 				C5CF9C6CFF3403E7C6E83905 /* .gitkeep */,
-				B7582509B37F1F08D66BE65E /* AuroraSignedSeedRoots.bin */,
+				F3CCC9535C89B5058025C324 /* AuroraSignedSeedTrust.bin */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -607,7 +607,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6B0D56598984E471D6D029DF /* AuroraSignedSeedRoots.bin in Resources */,
+				00FCE6A86500EA152B557C2E /* AuroraSignedSeedTrust.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -615,7 +615,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BAC3C37CAD1045169F814B6B /* AuroraSignedSeedRoots.bin in Resources */,
+				20B6B0456E4C18BF2260F889 /* AuroraSignedSeedTrust.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -639,7 +639,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/usr/bin/env sh\n# Stages the release-owned signed-seed roots as an AuroraKit resource. The\n# portable core validates the canonical encoding before the resource is copied.\nset -eu\n\nif [ -n \"${SRCROOT:-}\" ]; then\n  cd \"$SRCROOT\"\nelse\n  cd \"$(dirname \"$0\")/..\"\nfi\nAPPLE_DIR=\"$PWD\"\nAURORA_CORE_DIR=\"${AURORA_CORE_DIR:-$APPLE_DIR/../aurora-core}\"\nRESOURCE_DIR=\"$APPLE_DIR/Sources/AuroraKit/Resources\"\nRESOURCE_PATH=\"$RESOURCE_DIR/AuroraSignedSeedRoots.bin\"\nROOTS_PATH=\"${AURORA_SIGNED_SEED_ROOTS_FILE:-}\"\nREQUIRE_ROOTS=\"${AURORA_REQUIRE_SIGNED_SEED_ROOTS:-}\"\nCONFIGURATION=\"${CONFIGURATION:-}\"\n\nrequire_roots=false\nif [ \"$CONFIGURATION\" = \"Release\" ] || [ \"$REQUIRE_ROOTS\" = \"1\" ]; then\n  require_roots=true\nfi\n\nif [ -z \"$ROOTS_PATH\" ]; then\n  if [ \"$require_roots\" = true ]; then\n    rm -f \"$RESOURCE_PATH\"\n    echo \"error: AURORA_SIGNED_SEED_ROOTS_FILE is required for a release build\" >&2\n    exit 1\n  fi\n  umask 077\n  mkdir -p \"$RESOURCE_DIR\"\n  : > \"$RESOURCE_PATH\"\n  chmod 600 \"$RESOURCE_PATH\"\n  exit 0\nfi\n\nrm -f \"$RESOURCE_PATH\"\nif [ ! -f \"$ROOTS_PATH\" ] || [ ! -r \"$ROOTS_PATH\" ]; then\n  echo \"error: signed-seed roots file is not a readable regular file\" >&2\n  exit 1\nfi\nif [ ! -f \"$AURORA_CORE_DIR/go.mod\" ]; then\n  echo \"error: aurora-core checkout not found at $AURORA_CORE_DIR\" >&2\n  exit 1\nfi\n\nsize=\"$(LC_ALL=C wc -c < \"$ROOTS_PATH\" | tr -d '[:space:]')\"\ncase \"$size\" in\n  ''|*[!0-9]*)\n    echo \"error: unable to measure signed-seed roots file\" >&2\n    exit 1\n    ;;\nesac\nif [ \"$size\" -eq 0 ] || [ \"$size\" -gt 65536 ]; then\n  echo \"error: signed-seed roots file has an invalid size\" >&2\n  exit 1\nfi\n\nGOTOOLCHAIN=\"${GOTOOLCHAIN:-go1.25.13}\" \\\nGOCACHE=\"${GOCACHE:-/private/tmp/aurora-gocache}\" \\\ngo run \"$AURORA_CORE_DIR/cmd/auroractl\" check-native-provisioning-trust \"$ROOTS_PATH\" >/dev/null\n\numask 077\nmkdir -p \"$RESOURCE_DIR\"\ninstall -m 600 \"$ROOTS_PATH\" \"$RESOURCE_PATH\"\necho \"staged signed-seed roots for AuroraKit\"\n";
+			shellScript = "#!/usr/bin/env sh\n# Stages the release-owned sealed native trust resource as an AuroraKit\n# resource. The portable core validates the canonical encoding before the\n# resource is copied. The resource name (AuroraSignedSeedTrust.bin) is shared\n# with the Android native client so release artifacts match across platforms.\nset -eu\n\nif [ -n \"${SRCROOT:-}\" ]; then\n  cd \"$SRCROOT\"\nelse\n  cd \"$(dirname \"$0\")/..\"\nfi\nAPPLE_DIR=\"$PWD\"\nAURORA_CORE_DIR=\"${AURORA_CORE_DIR:-$APPLE_DIR/../aurora-core}\"\nRESOURCE_DIR=\"$APPLE_DIR/Sources/AuroraKit/Resources\"\nRESOURCE_PATH=\"$RESOURCE_DIR/AuroraSignedSeedTrust.bin\"\nTRUST_PATH=\"${AURORA_SIGNED_SEED_TRUST_PATH:-}\"\nREQUIRE_TRUST=\"${AURORA_REQUIRE_SIGNED_SEED_TRUST:-}\"\nCONFIGURATION=\"${CONFIGURATION:-}\"\n\nrequire_trust=false\nif [ \"$CONFIGURATION\" = \"Release\" ] || [ \"$REQUIRE_TRUST\" = \"1\" ]; then\n  require_trust=true\nfi\n\nif [ -z \"$TRUST_PATH\" ]; then\n  if [ \"$require_trust\" = true ]; then\n    rm -f \"$RESOURCE_PATH\"\n    echo \"error: AURORA_SIGNED_SEED_TRUST_PATH is required for a release build\" >&2\n    exit 1\n  fi\n  umask 077\n  mkdir -p \"$RESOURCE_DIR\"\n  : > \"$RESOURCE_PATH\"\n  chmod 600 \"$RESOURCE_PATH\"\n  exit 0\nfi\n\nrm -f \"$RESOURCE_PATH\"\nif [ ! -f \"$TRUST_PATH\" ] || [ ! -r \"$TRUST_PATH\" ]; then\n  echo \"error: sealed native trust file is not a readable regular file\" >&2\n  exit 1\nfi\nif [ ! -f \"$AURORA_CORE_DIR/go.mod\" ]; then\n  echo \"error: aurora-core checkout not found at $AURORA_CORE_DIR\" >&2\n  exit 1\nfi\n\nsize=\"$(LC_ALL=C wc -c < \"$TRUST_PATH\" | tr -d '[:space:]')\"\ncase \"$size\" in\n  ''|*[!0-9]*)\n    echo \"error: unable to measure sealed native trust file\" >&2\n    exit 1\n    ;;\nesac\nif [ \"$size\" -eq 0 ] || [ \"$size\" -gt 65536 ]; then\n  echo \"error: sealed native trust file has an invalid size\" >&2\n  exit 1\nfi\n\n(\n  cd \"$AURORA_CORE_DIR\"\n  GOTOOLCHAIN=\"${GOTOOLCHAIN:-go1.26.6}\" \\\n  GOCACHE=\"${GOCACHE:-/private/tmp/aurora-gocache}\" \\\n    go run ./cmd/auroractl check-native-provisioning-trust \"$TRUST_PATH\" >/dev/null\n)\n\numask 077\nmkdir -p \"$RESOURCE_DIR\"\ninstall -m 600 \"$TRUST_PATH\" \"$RESOURCE_PATH\"\necho \"staged sealed native trust resource for AuroraKit\"";
 		};
 		B5D5FDB3ADF89EF48848E896 /* Stage signed-seed roots */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -658,7 +658,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "#!/usr/bin/env sh\n# Stages the release-owned signed-seed roots as an AuroraKit resource. The\n# portable core validates the canonical encoding before the resource is copied.\nset -eu\n\nif [ -n \"${SRCROOT:-}\" ]; then\n  cd \"$SRCROOT\"\nelse\n  cd \"$(dirname \"$0\")/..\"\nfi\nAPPLE_DIR=\"$PWD\"\nAURORA_CORE_DIR=\"${AURORA_CORE_DIR:-$APPLE_DIR/../aurora-core}\"\nRESOURCE_DIR=\"$APPLE_DIR/Sources/AuroraKit/Resources\"\nRESOURCE_PATH=\"$RESOURCE_DIR/AuroraSignedSeedRoots.bin\"\nROOTS_PATH=\"${AURORA_SIGNED_SEED_ROOTS_FILE:-}\"\nREQUIRE_ROOTS=\"${AURORA_REQUIRE_SIGNED_SEED_ROOTS:-}\"\nCONFIGURATION=\"${CONFIGURATION:-}\"\n\nrequire_roots=false\nif [ \"$CONFIGURATION\" = \"Release\" ] || [ \"$REQUIRE_ROOTS\" = \"1\" ]; then\n  require_roots=true\nfi\n\nif [ -z \"$ROOTS_PATH\" ]; then\n  if [ \"$require_roots\" = true ]; then\n    rm -f \"$RESOURCE_PATH\"\n    echo \"error: AURORA_SIGNED_SEED_ROOTS_FILE is required for a release build\" >&2\n    exit 1\n  fi\n  umask 077\n  mkdir -p \"$RESOURCE_DIR\"\n  : > \"$RESOURCE_PATH\"\n  chmod 600 \"$RESOURCE_PATH\"\n  exit 0\nfi\n\nrm -f \"$RESOURCE_PATH\"\nif [ ! -f \"$ROOTS_PATH\" ] || [ ! -r \"$ROOTS_PATH\" ]; then\n  echo \"error: signed-seed roots file is not a readable regular file\" >&2\n  exit 1\nfi\nif [ ! -f \"$AURORA_CORE_DIR/go.mod\" ]; then\n  echo \"error: aurora-core checkout not found at $AURORA_CORE_DIR\" >&2\n  exit 1\nfi\n\nsize=\"$(LC_ALL=C wc -c < \"$ROOTS_PATH\" | tr -d '[:space:]')\"\ncase \"$size\" in\n  ''|*[!0-9]*)\n    echo \"error: unable to measure signed-seed roots file\" >&2\n    exit 1\n    ;;\nesac\nif [ \"$size\" -eq 0 ] || [ \"$size\" -gt 65536 ]; then\n  echo \"error: signed-seed roots file has an invalid size\" >&2\n  exit 1\nfi\n\nGOTOOLCHAIN=\"${GOTOOLCHAIN:-go1.25.13}\" \\\nGOCACHE=\"${GOCACHE:-/private/tmp/aurora-gocache}\" \\\ngo run \"$AURORA_CORE_DIR/cmd/auroractl\" check-native-provisioning-trust \"$ROOTS_PATH\" >/dev/null\n\numask 077\nmkdir -p \"$RESOURCE_DIR\"\ninstall -m 600 \"$ROOTS_PATH\" \"$RESOURCE_PATH\"\necho \"staged signed-seed roots for AuroraKit\"\n";
+			shellScript = "#!/usr/bin/env sh\n# Stages the release-owned sealed native trust resource as an AuroraKit\n# resource. The portable core validates the canonical encoding before the\n# resource is copied. The resource name (AuroraSignedSeedTrust.bin) is shared\n# with the Android native client so release artifacts match across platforms.\nset -eu\n\nif [ -n \"${SRCROOT:-}\" ]; then\n  cd \"$SRCROOT\"\nelse\n  cd \"$(dirname \"$0\")/..\"\nfi\nAPPLE_DIR=\"$PWD\"\nAURORA_CORE_DIR=\"${AURORA_CORE_DIR:-$APPLE_DIR/../aurora-core}\"\nRESOURCE_DIR=\"$APPLE_DIR/Sources/AuroraKit/Resources\"\nRESOURCE_PATH=\"$RESOURCE_DIR/AuroraSignedSeedTrust.bin\"\nTRUST_PATH=\"${AURORA_SIGNED_SEED_TRUST_PATH:-}\"\nREQUIRE_TRUST=\"${AURORA_REQUIRE_SIGNED_SEED_TRUST:-}\"\nCONFIGURATION=\"${CONFIGURATION:-}\"\n\nrequire_trust=false\nif [ \"$CONFIGURATION\" = \"Release\" ] || [ \"$REQUIRE_TRUST\" = \"1\" ]; then\n  require_trust=true\nfi\n\nif [ -z \"$TRUST_PATH\" ]; then\n  if [ \"$require_trust\" = true ]; then\n    rm -f \"$RESOURCE_PATH\"\n    echo \"error: AURORA_SIGNED_SEED_TRUST_PATH is required for a release build\" >&2\n    exit 1\n  fi\n  umask 077\n  mkdir -p \"$RESOURCE_DIR\"\n  : > \"$RESOURCE_PATH\"\n  chmod 600 \"$RESOURCE_PATH\"\n  exit 0\nfi\n\nrm -f \"$RESOURCE_PATH\"\nif [ ! -f \"$TRUST_PATH\" ] || [ ! -r \"$TRUST_PATH\" ]; then\n  echo \"error: sealed native trust file is not a readable regular file\" >&2\n  exit 1\nfi\nif [ ! -f \"$AURORA_CORE_DIR/go.mod\" ]; then\n  echo \"error: aurora-core checkout not found at $AURORA_CORE_DIR\" >&2\n  exit 1\nfi\n\nsize=\"$(LC_ALL=C wc -c < \"$TRUST_PATH\" | tr -d '[:space:]')\"\ncase \"$size\" in\n  ''|*[!0-9]*)\n    echo \"error: unable to measure sealed native trust file\" >&2\n    exit 1\n    ;;\nesac\nif [ \"$size\" -eq 0 ] || [ \"$size\" -gt 65536 ]; then\n  echo \"error: sealed native trust file has an invalid size\" >&2\n  exit 1\nfi\n\n(\n  cd \"$AURORA_CORE_DIR\"\n  GOTOOLCHAIN=\"${GOTOOLCHAIN:-go1.26.6}\" \\\n  GOCACHE=\"${GOCACHE:-/private/tmp/aurora-gocache}\" \\\n    go run ./cmd/auroractl check-native-provisioning-trust \"$TRUST_PATH\" >/dev/null\n)\n\numask 077\nmkdir -p \"$RESOURCE_DIR\"\ninstall -m 600 \"$TRUST_PATH\" \"$RESOURCE_PATH\"\necho \"staged sealed native trust resource for AuroraKit\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 

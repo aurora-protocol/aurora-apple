@@ -3,7 +3,7 @@ import Foundation
 /// Supplies the native core with the application-bundled signed-seed roots.
 /// Provisioning data never supplies or replaces these roots.
 public enum AuroraNativeProvisioningTrust {
-    private static let resourceName = "AuroraSignedSeedRoots"
+    private static let resourceName = "AuroraSignedSeedTrust"
     private static let resourceExtension = "bin"
     private static let maximumBytes = 64 << 10
 

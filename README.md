@@ -35,11 +35,12 @@ It produces macOS (arm64+x86_64), iOS device (arm64), and iOS simulator
 ## Signed-seed roots
 
 Native provisioning verifies signed seeds against roots supplied separately from
-the provisioning bundle. Release builds require a canonical root bundle from
-the release environment and stage it as a code-signed `AuroraKit` resource:
+the provisioning bundle. Release builds require a canonical sealed trust resource
+from the release environment and stage it as an `AuroraKit` resource bundled as
+`AuroraSignedSeedTrust.bin` (matching the Android native client's asset name):
 
 ```sh
-AURORA_SIGNED_SEED_ROOTS_FILE=/secure/path/AuroraSignedSeedRoots.bin \
+AURORA_SIGNED_SEED_TRUST_PATH=/secure/path/AuroraSignedSeedTrust.bin \
   scripts/build-auroracore-xcframework.sh
 ```
 
