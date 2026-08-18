@@ -61,7 +61,7 @@ final class AuroraProjectStructureTests: XCTestCase {
         )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
-        let coreRevision = "c2d9ac7758058c002aaac1e804ac677382c2c520"
+        let coreRevision = "fab82ba95e330e92576480cbfae88becbec1d985"
         XCTAssertTrue(
             workflow.contains("ref: \(coreRevision)"),
             "CI should pin the reviewed Core ABI revision"
@@ -69,6 +69,14 @@ final class AuroraProjectStructureTests: XCTestCase {
         XCTAssertTrue(
             coreBuildScript.contains("EXPECTED_CORE_REVISION=\"\(coreRevision)\""),
             "local builds should use the same reviewed Core ABI revision as CI"
+        )
+        let releaseWorkflow = try String(
+            contentsOf: root.appendingPathComponent(".github/workflows/release-validation.yml"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(
+            releaseWorkflow.contains("ref: \(coreRevision)"),
+            "signed release archives should embed the same reviewed Core ABI revision"
         )
         XCTAssertTrue(readme.contains("scripts/aurora-apple-check.sh"), "README should document the shared Apple readiness script")
         XCTAssertTrue(script.contains("swift test"), "Apple readiness script should run Swift package tests")
