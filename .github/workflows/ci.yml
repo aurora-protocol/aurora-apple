@@ -1,10 +1,12 @@
 name: CI
 
-# macOS runners are billed even for public repositories, so this workflow
-# must never trigger automatically. The merge gate for aurora-apple is the
-# local run of scripts/aurora-apple-check.sh; this workflow exists only for
-# an operator-triggered spot check.
+# This repository is public, so standard GitHub-hosted runners are free on
+# every OS, macos-latest included. Push is scoped to main so a pull request
+# branch does not fire this twice.
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
