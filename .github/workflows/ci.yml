@@ -1,15 +1,23 @@
 name: CI
 
+# macOS runners are billed even for public repositories, so this workflow
+# must never trigger automatically. The merge gate for aurora-apple is the
+# local run of scripts/aurora-apple-check.sh; this workflow exists only for
+# an operator-triggered spot check.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   apple:
     runs-on: macos-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout aurora-apple
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
