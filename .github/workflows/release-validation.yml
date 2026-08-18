@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: aurora-protocol/aurora-core
-          ref: c2d9ac7758058c002aaac1e804ac677382c2c520
+          ref: fab82ba95e330e92576480cbfae88becbec1d985
           path: aurora-core
           persist-credentials: false
       - name: Set up Go
