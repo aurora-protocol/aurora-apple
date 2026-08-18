@@ -14,13 +14,13 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout aurora-apple
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: refs/heads/main
           path: aurora-apple
           persist-credentials: false
       - name: Checkout aurora-core
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: aurora-protocol/aurora-core
           ref: fab82ba95e330e92576480cbfae88becbec1d985

@@ -46,18 +46,34 @@ final class AuroraProjectStructureTests: XCTestCase {
         }
 
         XCTAssertTrue(workflow.contains("scripts/aurora-apple-check.sh"), "CI should call the shared Apple readiness script")
-        let workflowSecurityPolicy = try workflowSecurityPolicy(at: root.appendingPathComponent(".github/workflows/ci.yml"))
-        XCTAssertEqual(workflowSecurityPolicy.contentsPermission, "read", "CI should grant only repository read access")
-        XCTAssertEqual(workflowSecurityPolicy.checkoutDisablesCredentialPersistence, [true, true], "CI checkouts should not persist credentials")
+        let ciPolicy = try workflowSecurityPolicy(at: root.appendingPathComponent(".github/workflows/ci.yml"))
+        XCTAssertEqual(ciPolicy.contentsPermission, "read", "CI should grant only repository read access")
+        XCTAssertEqual(ciPolicy.checkoutDisablesCredentialPersistence, [true, true], "CI checkouts should not persist credentials")
         let approvedActionReferences = [
-            "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
-            "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
         ]
         XCTAssertEqual(
-            workflowSecurityPolicy.actionReferences.sorted(),
+            ciPolicy.actionReferences.sorted(),
             approvedActionReferences.sorted(),
             "CI should use only approved immutable action pins"
+        )
+        // The signed-release workflow handles production secrets, so hold it to
+        // the same pin and credential policy rather than leaving it unasserted.
+        let releasePolicy = try workflowSecurityPolicy(
+            at: root.appendingPathComponent(".github/workflows/release-validation.yml")
+        )
+        XCTAssertEqual(releasePolicy.contentsPermission, "read", "release validation should grant only repository read access")
+        XCTAssertEqual(
+            releasePolicy.checkoutDisablesCredentialPersistence,
+            [true, true],
+            "release validation checkouts should not persist credentials"
+        )
+        XCTAssertEqual(
+            releasePolicy.actionReferences.sorted(),
+            approvedActionReferences.sorted(),
+            "release validation should use the same approved immutable action pins as CI"
         )
         XCTAssertTrue(workflow.contains("go-version-file: aurora-core/go.mod"), "CI should use the checked-out core Go version")
         XCTAssertTrue(workflow.contains("cache-dependency-path: aurora-core/go.sum"), "CI should cache the checked-out core dependencies")
