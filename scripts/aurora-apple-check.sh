@@ -14,6 +14,16 @@ export CLANG_MODULE_CACHE_PATH
 
 mkdir -p "$SWIFTPM_CACHE_PATH" "$SWIFTPM_CONFIG_PATH" "$SWIFTPM_SECURITY_PATH" "$CLANG_MODULE_CACHE_PATH"
 
+# Style gate. aurora-apple has no CI (macOS runners are billed even for public
+# repos), so this script is the enforcement point. Skipped with a notice when
+# swiftlint is not installed so the script stays usable on a bare checkout.
+if command -v swiftlint >/dev/null 2>&1; then
+  printf 'swiftlint: %s\n' "$(swiftlint version)"
+  swiftlint lint --quiet --strict
+else
+  printf 'swiftlint not found; skipping style gate (brew install swiftlint)\n' >&2
+fi
+
 scripts/verify-core-abi.sh
 
 # Build the embedded portable core first; AuroraKit links it (Section 35.10).

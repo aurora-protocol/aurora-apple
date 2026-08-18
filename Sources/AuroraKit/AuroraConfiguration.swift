@@ -1,6 +1,12 @@
 import Foundation
 
 public struct AuroraConfiguration: Equatable, Sendable {
+    /// Loopback endpoint used before a profile or provider configuration supplies one.
+    ///
+    /// Built with `URL(string:)` against a literal that is known-valid, so the
+    /// fallback avoids a force unwrap at every call site.
+    public static let defaultLoopbackEndpoint = URL(string: "http://127.0.0.1:9443") ?? URL(fileURLWithPath: "/")
+
     public var endpoint: URL
     public var routePolicy: String
     public var nativeProvisioningIdentifier: String?
@@ -19,7 +25,7 @@ public struct AuroraConfiguration: Equatable, Sendable {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
               let scheme = url.scheme?.lowercased(),
-              (scheme == "http" || scheme == "https"),
+              scheme == "http" || scheme == "https",
               let host = url.host,
               url.user == nil,
               url.password == nil,
@@ -205,65 +211,17 @@ public struct AuroraPortableProfile: Equatable, Sendable {
     private mutating func set(section: String, key: String, value: String) throws {
         switch section {
         case "aurora":
-            switch key {
-            case "version":
-                version = value
-            case "profile":
-                profile = value
-            case "route":
-                route = value
-            case "speed":
-                speed = value
-            default:
-                throw AuroraPortableProfileError.unknownKey(section: section, key: key)
-            }
+            try setAurora(key: key, value: value)
         case "local":
-            switch key {
-            case "mode":
-                localMode = value
-            case "dns":
-                localDNS = value
-            default:
-                throw AuroraPortableProfileError.unknownKey(section: section, key: key)
-            }
+            try setLocal(key: key, value: value)
         case "methods":
-            switch key {
-            case "allow_h2":
-                allowH2 = try Self.parseBool(value, key: key)
-            case "allow_h1_ws":
-                allowH1WebSocket = try Self.parseBool(value, key: key)
-            case "allow_h3_ext_dgram":
-                allowH3ExtendedDatagram = try Self.parseBool(value, key: key)
-            case "allow_masque":
-                allowMasque = try Self.parseBool(value, key: key)
-            default:
-                throw AuroraPortableProfileError.unknownKey(section: section, key: key)
-            }
+            try setMethods(key: key, value: value)
         case "security":
-            switch key {
-            case "require_pq":
-                requirePostQuantum = try Self.parseBool(value, key: key)
-            case "require_split2_for_adversarial":
-                requireSplit2ForAdversarial = try Self.parseBool(value, key: key)
-            case "allow_lab_tokens":
-                allowLabTokens = try Self.parseBool(value, key: key)
-            default:
-                throw AuroraPortableProfileError.unknownKey(section: section, key: key)
-            }
+            try setSecurity(key: key, value: value)
         case "storage":
-            switch key {
-            case "replay_cache":
-                replayCache = value
-            default:
-                throw AuroraPortableProfileError.unknownKey(section: section, key: key)
-            }
+            try setStorage(key: key, value: value)
         case Self.appleExtensionSection:
-            if key == "endpoint" {
-                guard let parsed = AuroraConfiguration.validatedEndpoint(from: value) else {
-                    throw AuroraPortableProfileError.invalidEndpoint(value)
-                }
-                endpoint = parsed
-            }
+            try setAppleExtension(key: key, value: value)
         default:
             if section.isEmpty {
                 throw AuroraPortableProfileError.keyOutsideTable(key)
@@ -272,6 +230,77 @@ public struct AuroraPortableProfile: Equatable, Sendable {
                 throw AuroraPortableProfileError.unknownTable(section)
             }
         }
+    }
+
+    private mutating func setAurora(key: String, value: String) throws {
+        switch key {
+        case "version":
+            version = value
+        case "profile":
+            profile = value
+        case "route":
+            route = value
+        case "speed":
+            speed = value
+        default:
+            throw AuroraPortableProfileError.unknownKey(section: "aurora", key: key)
+        }
+    }
+
+    private mutating func setLocal(key: String, value: String) throws {
+        switch key {
+        case "mode":
+            localMode = value
+        case "dns":
+            localDNS = value
+        default:
+            throw AuroraPortableProfileError.unknownKey(section: "local", key: key)
+        }
+    }
+
+    private mutating func setMethods(key: String, value: String) throws {
+        switch key {
+        case "allow_h2":
+            allowH2 = try Self.parseBool(value, key: key)
+        case "allow_h1_ws":
+            allowH1WebSocket = try Self.parseBool(value, key: key)
+        case "allow_h3_ext_dgram":
+            allowH3ExtendedDatagram = try Self.parseBool(value, key: key)
+        case "allow_masque":
+            allowMasque = try Self.parseBool(value, key: key)
+        default:
+            throw AuroraPortableProfileError.unknownKey(section: "methods", key: key)
+        }
+    }
+
+    private mutating func setSecurity(key: String, value: String) throws {
+        switch key {
+        case "require_pq":
+            requirePostQuantum = try Self.parseBool(value, key: key)
+        case "require_split2_for_adversarial":
+            requireSplit2ForAdversarial = try Self.parseBool(value, key: key)
+        case "allow_lab_tokens":
+            allowLabTokens = try Self.parseBool(value, key: key)
+        default:
+            throw AuroraPortableProfileError.unknownKey(section: "security", key: key)
+        }
+    }
+
+    private mutating func setStorage(key: String, value: String) throws {
+        switch key {
+        case "replay_cache":
+            replayCache = value
+        default:
+            throw AuroraPortableProfileError.unknownKey(section: "storage", key: key)
+        }
+    }
+
+    private mutating func setAppleExtension(key: String, value: String) throws {
+        guard key == "endpoint" else { return }
+        guard let parsed = AuroraConfiguration.validatedEndpoint(from: value) else {
+            throw AuroraPortableProfileError.invalidEndpoint(value)
+        }
+        endpoint = parsed
     }
 
     private func validate() throws {

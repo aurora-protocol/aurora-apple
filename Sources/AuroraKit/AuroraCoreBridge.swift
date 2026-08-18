@@ -16,7 +16,7 @@ enum AuroraCore {
         AuroraNativeProvisioningStore.maximumBytes + 4 + 1 + AuroraNativeProvisioningStore.maximumReservations * 48
     private static let maximumCallOutputBytes = maximumCallInputBytes * 2 + 1_024
 
-    private enum Op: Int32 {
+    private enum CoreOp: Int32 {
         case encodeMetadataRequest = 1
         case encodeIssueRequest = 2
         case encodeSpendRequest = 3
@@ -298,8 +298,7 @@ enum AuroraCore {
         return result.payload
     }
 
-
-    private static func call(_ op: Op, input: Data = Data(), arg: UInt64 = 0) -> Result? {
+    private static func call(_ op: CoreOp, input: Data = Data(), arg: UInt64 = 0) -> Result? {
         guard input.count <= maximumCallInputBytes else { return nil }
         var outLen: Int32 = 0
         let raw: UnsafeMutablePointer<UInt8>?
@@ -307,7 +306,8 @@ enum AuroraCore {
             raw = AuroraCoreCall(op.rawValue, nil, 0, arg, &outLen)
         } else {
             raw = input.withUnsafeBytes { buffer -> UnsafeMutablePointer<UInt8>? in
-                let base = buffer.baseAddress!.assumingMemoryBound(to: UInt8.self)
+                guard let baseAddress = buffer.baseAddress else { return nil }
+                let base = baseAddress.assumingMemoryBound(to: UInt8.self)
                 return AuroraCoreCall(op.rawValue, UnsafeMutablePointer(mutating: base), Int32(input.count), arg, &outLen)
             }
         }

@@ -1,0 +1,9 @@
+# Test-only overrides, merged over the root .swiftlint.yml.
+#
+# force_unwrapping is a real signal in shipping code but idiomatic in test
+# fixtures: a failed unwrap in a test is itself a test failure, which is the
+# intended outcome rather than a defect to guard against.
+disabled_rules:
+  - force_unwrapping
+  # Mock helper classes are declared inside test cases by design.
+  - static_over_final_class

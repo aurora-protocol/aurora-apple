@@ -5,7 +5,7 @@ import NetworkExtension
 
 final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let configurationResolver = AuroraTunnelConfigurationResolver(
-        fallbackConfiguration: AuroraConfiguration(endpoint: URL(string: "http://127.0.0.1:9443")!),
+        fallbackConfiguration: AuroraConfiguration(endpoint: AuroraConfiguration.defaultLoopbackEndpoint),
         profileStore: AuroraUserDefaultsProfileStore(
             appGroupIdentifier: AuroraAppleSharedContainer.appGroupIdentifier()
         )
