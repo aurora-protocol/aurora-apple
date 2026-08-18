@@ -170,8 +170,9 @@ enum AuroraRandom {
         }
         var data = Data(count: count)
         #if canImport(Security)
-        let status = data.withUnsafeMutableBytes { buffer in
-            SecRandomCopyBytes(kSecRandomDefault, count, buffer.baseAddress!)
+        let status = data.withUnsafeMutableBytes { buffer -> Int32 in
+            guard let baseAddress = buffer.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, count, baseAddress)
         }
         guard status == errSecSuccess else {
             throw AuroraSecureCredentialStoreError.keychainStatus(status)

@@ -134,7 +134,7 @@ struct AuroraNativeProvisioningReservationLedger: Codable, Equatable, Sendable {
     }
 
     func isValid() -> Bool {
-        guard (sourceDigest == nil || sourceDigest?.count == 32),
+        guard sourceDigest == nil || sourceDigest?.count == 32,
               entries.count <= AuroraNativeProvisioningStore.maximumReservations
         else {
             return false
